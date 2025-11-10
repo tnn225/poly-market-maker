@@ -21,7 +21,7 @@ idna==3.3
 iniconfig==1.1.1
 ipfshttpclient==0.8.0a2
 jsonschema==3.2.0
-lru-dict==1.1.7
+lru-dict==1.4.1
 multiaddr==0.0.9
 multidict==6.0.2
 netaddr==0.8.0
@@ -30,7 +30,7 @@ parsimonious==0.8.1
 pluggy==1.0.0
 protobuf==3.19.4
 py==1.11.0
-py-clob-client>=0.13.3
+py-clob-client==0.13.3
 py-order-utils>=0.0.21
 pycryptodome==3.14.1
 pyparsing==3.0.7

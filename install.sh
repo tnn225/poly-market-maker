@@ -5,7 +5,7 @@ set -e
 
 echo "(re)setting virtual environment"
 rm -rf .venv/
-python3.10 -m venv .venv
+python -m venv .venv
 source .venv/bin/activate
 
 pip install --upgrade pip
