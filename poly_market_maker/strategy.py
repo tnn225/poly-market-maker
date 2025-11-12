@@ -11,6 +11,7 @@ from poly_market_maker.strategies.base_strategy import BaseStrategy
 from poly_market_maker.strategies.amm_strategy import AMMStrategy
 from poly_market_maker.strategies.bands_strategy import BandsStrategy
 
+DEBUG = False
 
 class Strategy(Enum):
     AMM = "amm"
@@ -67,8 +68,9 @@ class StrategyManager:
         self.logger.debug(f"order to cancel: {len(orders_to_cancel)}")
         self.logger.debug(f"order to place: {len(orders_to_place)}")
 
-        self.cancel_orders(orders_to_cancel)
-        self.place_orders(orders_to_place)
+        if not DEBUG:
+            self.cancel_orders(orders_to_cancel)
+            self.place_orders(orders_to_place)
 
         self.logger.debug("Synchronized strategy!")
 
@@ -90,7 +92,7 @@ class StrategyManager:
             self.price_feed.get_price(Token.A),
             MAX_DECIMALS,
         )
-        price_b = round(1 - price_a, MAX_DECIMALS)
+        price_b = round(0.99 - price_a, MAX_DECIMALS)
         return {Token.A: price_a, Token.B: price_b}
 
     def cancel_orders(self, orders_to_cancel):

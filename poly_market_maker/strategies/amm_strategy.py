@@ -5,7 +5,6 @@ from poly_market_maker.order import Order
 from poly_market_maker.strategies.amm import AMMManager, AMMConfig
 from poly_market_maker.strategies.base_strategy import BaseStrategy
 
-
 class OrderType:
     def __init__(self, order: Order):
         self.price = order.price
@@ -56,6 +55,7 @@ class AMMStrategy(BaseStrategy):
         expected_orders = self.amm_manager.get_expected_orders(
             target_prices,
             orderbook.balances,
+            orderbook.orders
         )
         expected_order_types = set(OrderType(order) for order in expected_orders)
 
@@ -90,6 +90,7 @@ class AMMStrategy(BaseStrategy):
                     self._new_order_from_order_type(order_type, new_size)
                 ]
 
+        orders_to_cancel = []
         return (orders_to_cancel, orders_to_place)
 
     @staticmethod

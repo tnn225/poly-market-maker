@@ -14,6 +14,18 @@ fi
 
 source .venv/bin/activate
 
+source .env # load environment variables
+
+command="""python3 -m poly_market_maker \
+    --private-key \"$PRIVATE_KEY\" \
+    --rpc-url \"$RPC_URL\" \
+    --clob-api-url \"$CLOB_API_URL\" \
+    --condition-id \"$CONDITION_ID\" \
+    --strategy \"$STRATEGY\" \
+    --strategy-config \"$CONFIG\"
+"""
+echo "command: $command\n"
+
 exec python3 -m poly_market_maker \
     --private-key "$PRIVATE_KEY" \
     --rpc-url "$RPC_URL" \

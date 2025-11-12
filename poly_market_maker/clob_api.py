@@ -1,7 +1,8 @@
 import logging
+import os
 import sys
 import time
-from py_clob_client.client import ClobClient, ApiCreds, OrderArgs, FilterParams
+from py_clob_client.client import ClobClient, ApiCreds, OrderArgs, OpenOrderParams
 from py_clob_client.exceptions import PolyApiException
 
 from poly_market_maker.utils import randomize_default_price
@@ -10,31 +11,28 @@ from poly_market_maker.metrics import clob_requests_latency
 
 DEFAULT_PRICE = 0.5
 
+from py_clob_client.client import ClobClient
+
+from dotenv import load_dotenv
+load_dotenv()
+
+HOST = "https://clob.polymarket.com"
+CHAIN_ID = 137
+PRIVATE_KEY = os.getenv("PRIVATE_KEY")
+FUNDER = os.getenv("FUNDER")
 
 class ClobApi:
     def __init__(self, host, chain_id, private_key):
         self.logger = logging.getLogger(self.__class__.__name__)
-
-        self.client = self._init_client_L1(
-            host=host,
-            chain_id=chain_id,
-            private_key=private_key,
+        self.client = ClobClient(
+            HOST,  # The CLOB API endpoint
+            key=PRIVATE_KEY,  # Your wallet's private key
+            chain_id=CHAIN_ID,  # Polygon chain ID (137)
+            signature_type=1,  # 1 for email/Magic wallet signatures
+            funder=FUNDER  # Address that holds your funds
         )
+        self.client.set_api_creds(self.client.create_or_derive_api_creds())
 
-        try:
-            api_creds = self.client.derive_api_key()
-            self.logger.debug(f"Api key found: {api_creds.api_key}")
-        except PolyApiException:
-            self.logger.debug("Api key not found. Creating a new one...")
-            api_creds = self.client.create_api_key()
-            self.logger.debug(f"Api key created: {api_creds.api_key}.")
-
-        self.client = self._init_client_L2(
-            host=host,
-            chain_id=chain_id,
-            private_key=private_key,
-            creds=api_creds,
-        )
 
     def get_address(self):
         return self.client.get_address()
@@ -83,7 +81,7 @@ class ClobApi:
         self.logger.debug("Fetching open keeper orders from the API...")
         start_time = time.time()
         try:
-            resp = self.client.get_orders(FilterParams(market=condition_id))
+            resp = self.client.get_orders(OpenOrderParams(market=condition_id))
             clob_requests_latency.labels(method="get_orders", status="ok").observe(
                 (time.time() - start_time)
             )
@@ -168,39 +166,6 @@ class ClobApi:
             )
         return False
 
-    def _init_client_L1(
-        self,
-        host,
-        chain_id,
-        private_key,
-    ) -> ClobClient:
-        clob_client = ClobClient(host, chain_id, private_key)
-        try:
-            if clob_client.get_ok() == OK:
-                self.logger.info("Connected to CLOB API!")
-                self.logger.info(
-                    "CLOB Keeper address: {}".format(clob_client.get_address())
-                )
-                return clob_client
-        except:
-            self.logger.error("Unable to connect to CLOB API, shutting down!")
-            sys.exit(1)
-
-    def _init_client_L2(
-        self, host, chain_id, private_key, creds: ApiCreds
-    ) -> ClobClient:
-        clob_client = ClobClient(host, chain_id, private_key, creds)
-        try:
-            if clob_client.get_ok() == OK:
-                self.logger.info("Connected to CLOB API!")
-                self.logger.info(
-                    "CLOB Keeper address: {}".format(clob_client.get_address())
-                )
-                return clob_client
-        except:
-            self.logger.error("Unable to connect to CLOB API, shutting down!")
-            sys.exit(1)
-
     def _get_order(self, order_dict: dict) -> dict:
         size = float(order_dict.get("original_size")) - float(
             order_dict.get("size_matched")
@@ -217,3 +182,16 @@ class ClobApi:
             "token_id": token_id,
             "id": order_id,
         }
+    
+    def get_bids_asks(self, token_id: int):
+        orderbook = self.client.get_order_book(token_id) 
+        self.logger.debug(f"orderbook {orderbook}")
+
+        # Convert to list of tuples (price, size) as floats
+        bids = [(float(b.price), float(b.size)) for b in orderbook.bids]
+        asks = [(float(a.price), float(a.size)) for a in orderbook.asks]
+
+        # Sort bids descending (highest bid first), asks ascending (lowest ask first)
+        bids.sort(key=lambda x: x[0], reverse=True)
+        asks.sort(key=lambda x: x[0])
+        return bids, asks

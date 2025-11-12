@@ -1,5 +1,6 @@
 import logging
 from prometheus_client import start_http_server
+import os  
 import time
 
 from poly_market_maker.args import get_args
@@ -16,6 +17,10 @@ from poly_market_maker.contracts import Contracts
 from poly_market_maker.metrics import keeper_balance_amount
 from poly_market_maker.strategy import StrategyManager
 
+from dotenv import load_dotenv          # Environment variable management
+load_dotenv()                           # Load environment variables from .env file
+
+FUNDER = os.getenv("FUNDER")
 
 class App:
     """Market maker keeper on Polymarket CLOB"""
@@ -35,7 +40,9 @@ class App:
         start_http_server(self.metrics_server_port)
 
         self.web3 = setup_web3(args.rpc_url, args.private_key)
-        self.address = self.web3.eth.account.from_key(args.private_key).address
+        # self.address = self.web3.eth.account.from_key(args.private_key).address
+        self.address = FUNDER
+
 
         self.clob_api = ClobApi(
             host=args.clob_api_url,
