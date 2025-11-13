@@ -16,7 +16,7 @@ def get_args(args) -> dict:
         "--sync-interval",
         type=int,
         required=False,
-        default=5,
+        default=2,
         help="The number of seconds in between synchronizations",
     )
 

@@ -60,8 +60,8 @@ class AMM:
 
         assert isinstance(token, Token)
 
-        if config.spread >= config.depth:
-            raise Exception("Depth does not exceed spread.")
+        # if config.spread >= config.depth:
+        #    raise Exception("Depth does not exceed spread.")
 
         self.token = token
         self.p_min = config.p_min
@@ -74,38 +74,33 @@ class AMM:
     def set_price(self, p_i: float):
         self.p_i = p_i
         bid = round(self.p_i, 2)
-        ask = round(self.p_i, 2)
-        self.p_u = round(min(ask + self.depth, self.p_max), 2)
+        self.ask = round(self.p_i + self.spread, 2)
+        self.p_u = round(min(self.ask + self.depth, self.p_max), 2)
         self.p_l = round(max(bid - self.depth, self.p_min), 2)
 
         self.buy_prices = []
-        self.sell_prices = []
-        
-        while bid >= self.p_l and ask <= self.p_u:
+        logging.info(f"set_price p_i={self.p_i}, p_l={self.p_l}, p_u={self.p_u}, bid={bid}, ask={self.ask}")
+        while self.p_l <= bid <= self.p_u:
             self.buy_prices.append(bid)
-            self.sell_prices.append(ask)
             bid = round(bid - self.delta, 2)
-            ask = round(ask + self.delta, 2)
+        logging.info(f"set_price p_i={self.p_i}, p_l={self.p_l}, p_u={self.p_u}, bid={bid}, ask={self.ask} buy_prices={self.buy_prices}")
 
-    def get_sell_orders(self, x):
-        return []
-    
-        sizes = [
-            # round down to avoid too large orders
-            math_round_down(size, 2)
-            for size in self.diff([self.sell_size(x, p_t) for p_t in self.sell_prices])
-        ]
-
-        orders = [
-            Order(
-                price=price,
-                side=Side.SELL,
-                token=self.token,
-                size=size,
+    def get_sell_orders(self, balance):
+        orders = []
+        price = self.ask + self.depth
+        size = 10
+        max_price = min(0.99, self.ask + self.depth)
+        while price <= max_price and size <= balance:
+            orders.append(
+                Order(
+                    price=price,
+                    side=Side.SELL,
+                    token=self.token,
+                    size=size,
+                )
             )
-            for (price, size) in zip(self.sell_prices, sizes)
-        ]
-
+            price = round(price + self.delta, 2)
+            balance -= size
         return orders
 
     def get_buy_orders(self):
@@ -127,6 +122,7 @@ class AMMManager:
         self.amm_a = AMM(token=Token.A, config=config)
         self.amm_b = AMM(token=Token.B, config=config)
         self.max_collateral = config.max_collateral
+        self.p_max = config.p_max
 
     def get_expected_orders(
         self,
@@ -134,6 +130,9 @@ class AMMManager:
         balances,
         open_orders,
     ):
+        if not target_prices[Token.A] or not target_prices[Token.B]:
+            return []
+
         self.amm_a.set_price(target_prices[Token.A])
         self.amm_b.set_price(target_prices[Token.B])
 
@@ -143,12 +142,19 @@ class AMMManager:
         buy_orders_a = self.amm_a.get_buy_orders()
         buy_orders_b = self.amm_b.get_buy_orders()
 
-        assert len(buy_orders_a) == len(buy_orders_b)
+        # assert len(buy_orders_a) == len(buy_orders_b)
         
         all_orders = set(OrderType(order) for order in open_orders)
 
         orders = []
-        for i in range(len(buy_orders_a)):
+
+        if target_prices[Token.A] >= 0.70:
+            return sell_orders_a + sell_orders_b + buy_orders_a
+        
+        if target_prices[Token.B] >= 0.70:
+            return sell_orders_a + sell_orders_b + buy_orders_b
+        
+        for i in range(min(len(buy_orders_a), len(buy_orders_b))):
             buy_order_a = buy_orders_a[i]
             buy_order_b = buy_orders_b[i]
 
@@ -159,4 +165,4 @@ class AMMManager:
                 orders.append(buy_order_a)
                 orders.append(buy_order_b)
 
-        return orders
+        return sell_orders_a + sell_orders_b + orders
