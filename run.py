@@ -27,9 +27,7 @@ TARGET = os.getenv("TARGET")
 setup_logging()
 logger = logging.getLogger(__name__)
 
-
-
-if __name__ == "__main__":
+def main():
     engine = PriceEngine(symbol="btc/usd", interval_seconds=900)
     engine.start()
 
@@ -86,3 +84,12 @@ if __name__ == "__main__":
 
 
     
+
+
+if __name__ == "__main__":
+    while True:
+        try:
+            main()
+        except Exception as e:
+            print("Error occurred, restarting:", e)
+            continue
