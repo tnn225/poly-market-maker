@@ -3,9 +3,9 @@ from enum import Enum
 Collateral = "Collateral"
 
 
-class Token(Enum):
+class MyToken(Enum):
     A = "TokenA"
     B = "TokenB"
 
     def complement(self):
-        return Token.B if self == Token.A else Token.A
+        return MyToken.B if self == MyToken.A else MyToken.A

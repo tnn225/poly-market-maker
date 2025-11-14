@@ -1,7 +1,7 @@
 import logging
 from math import sqrt
 
-from poly_market_maker.token import Token, Collateral
+from poly_market_maker.my_token import MyToken, Collateral
 from poly_market_maker.order import Order, Side
 from poly_market_maker.utils import math_round_down
 
@@ -119,25 +119,26 @@ class AMM:
 class AMMManager:
     def __init__(self, config: AMMConfig):
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.amm_a = AMM(token=Token.A, config=config)
-        self.amm_b = AMM(token=Token.B, config=config)
+        self.amm_a = AMM(token=MyToken.A, config=config)
+        self.amm_b = AMM(token=MyToken.B, config=config)
         self.max_collateral = config.max_collateral
         self.p_max = config.p_max
 
     def get_expected_orders(
         self,
-        target_prices,
+        bid, 
+        ask,
         balances,
         open_orders,
     ):
-        if not target_prices[Token.A] or not target_prices[Token.B]:
+        if not bid or not ask:
             return []
 
-        self.amm_a.set_price(target_prices[Token.A])
-        self.amm_b.set_price(target_prices[Token.B])
+        self.amm_a.set_price(bid, ask)
+        self.amm_b.set_price(0.99 - bid, 0.99 - ask)
 
-        sell_orders_a = self.amm_a.get_sell_orders(balances[Token.A])
-        sell_orders_b = self.amm_b.get_sell_orders(balances[Token.B])
+        sell_orders_a = self.amm_a.get_sell_orders(balances[MyToken.A])
+        sell_orders_b = self.amm_b.get_sell_orders(balances[MyToken.B])
 
         buy_orders_a = self.amm_a.get_buy_orders()
         buy_orders_b = self.amm_b.get_buy_orders()
@@ -148,10 +149,10 @@ class AMMManager:
 
         orders = []
 
-        if target_prices[Token.A] >= 0.70:
+        if bid >= 0.70:
             return sell_orders_a + sell_orders_b + buy_orders_a
         
-        if target_prices[Token.B] >= 0.70:
+        if 0.99 - bid >= 0.70:
             return sell_orders_a + sell_orders_b + buy_orders_b
         
         for i in range(min(len(buy_orders_a), len(buy_orders_b))):

@@ -2,6 +2,8 @@ import logging
 import os
 import sys
 import time
+import requests
+
 from py_clob_client.client import ClobClient, ApiCreds, OrderArgs, OpenOrderParams
 from py_clob_client.exceptions import PolyApiException
 
@@ -22,7 +24,7 @@ PRIVATE_KEY = os.getenv("PRIVATE_KEY")
 FUNDER = os.getenv("FUNDER")
 
 class ClobApi:
-    def __init__(self, host, chain_id, private_key):
+    def __init__(self):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.client = ClobClient(
             HOST,  # The CLOB API endpoint
@@ -185,7 +187,7 @@ class ClobApi:
     
     def get_bids_asks(self, token_id: int):
         orderbook = self.client.get_order_book(token_id) 
-        self.logger.debug(f"orderbook {orderbook}")
+        # self.logger.debug(f"orderbook {orderbook}")
 
         # Convert to list of tuples (price, size) as floats
         bids = [(float(b.price), float(b.size)) for b in orderbook.bids]
@@ -195,3 +197,15 @@ class ClobApi:
         bids.sort(key=lambda x: x[0], reverse=True)
         asks.sort(key=lambda x: x[0])
         return bids, asks
+    
+
+    def get_condition_id_by_slug(self, slug: str):
+        url = f"https://gamma-api.polymarket.com/markets/slug/{slug}"
+        resp = requests.get(url)
+
+        if resp.status_code != 200:
+            raise Exception(f"Error {resp.status_code}: {resp.text}")
+                
+        return resp.json().get("conditionId")
+
+

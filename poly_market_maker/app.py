@@ -4,12 +4,13 @@ import os
 import time
 
 from poly_market_maker.args import get_args
+from poly_market_maker.price_engine import PriceEngine
 from poly_market_maker.price_feed import PriceFeedClob
 from poly_market_maker.gas import GasStation, GasStrategy
 from poly_market_maker.utils import setup_logging, setup_web3
 from poly_market_maker.order import Order, Side
 from poly_market_maker.market import Market
-from poly_market_maker.token import Token, Collateral
+from poly_market_maker.my_token import MyToken, Collateral
 from poly_market_maker.clob_api import ClobApi
 from poly_market_maker.lifecycle import Lifecycle
 from poly_market_maker.orderbook import OrderBookManager
@@ -21,6 +22,7 @@ from dotenv import load_dotenv          # Environment variable management
 load_dotenv()                           # Load environment variables from .env file
 
 FUNDER = os.getenv("FUNDER")
+TARGET = os.getenv("TARGET")
 
 class App:
     """Market maker keeper on Polymarket CLOB"""
@@ -79,11 +81,15 @@ class App:
         )
         self.order_book_manager.start()
 
+        self.price_engine = PriceEngine(symbol="btc/usd", target_price=TARGET, interval_seconds=900)
+        self.price_engine.start()
+
         self.strategy_manager = StrategyManager(
             args.strategy,
             args.strategy_config,
             self.price_feed,
             self.order_book_manager,
+            self.price_engine
         )
 
     """

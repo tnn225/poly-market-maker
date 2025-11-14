@@ -60,11 +60,14 @@ class StrategyManager:
             return
 
         token_prices = self.get_token_prices()
-        self.logger.debug(f"{token_prices}")
+        bid, ask = self.get_bid_ask()
+        self.logger.debug(f"bid: {bid}, ask: {ask}")
+        # self.logger.debug(f"{token_prices}")
         (orders_to_cancel, orders_to_place) = self.strategy.get_orders(
-            orderbook, token_prices
+            orderbook, bid, ask
         )
 
+        self.logger.debug(f"order existing: {len(orderbook.orders)}")
         self.logger.debug(f"order to cancel: {len(orders_to_cancel)}")
         self.logger.debug(f"order to place: {len(orders_to_place)}")
 
@@ -94,6 +97,9 @@ class StrategyManager:
         )
         price_b = round(0.99 - price_a, MAX_DECIMALS)
         return {Token.A: price_a, Token.B: price_b}
+    
+    def get_bid_ask(self):
+        return self.price_feed.get_bid_ask(Token.A)
 
     def cancel_orders(self, orders_to_cancel):
         if len(orders_to_cancel) > 0:
