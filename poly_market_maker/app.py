@@ -145,12 +145,12 @@ class App:
         token_A_balance = self.contracts.token_balance_of(
             self.clob_api.get_conditional_address(),
             self.address,
-            self.market.token_id(Token.A),
+            self.market.token_id(MyToken.A),
         )
         token_B_balance = self.contracts.token_balance_of(
             self.clob_api.get_conditional_address(),
             self.address,
-            self.market.token_id(Token.B),
+            self.market.token_id(MyToken.B),
         )
         gas_balance = self.contracts.gas_balance(self.address)
 
@@ -162,12 +162,12 @@ class App:
         keeper_balance_amount.labels(
             accountaddress=self.address,
             assetaddress=self.clob_api.get_conditional_address(),
-            tokenid=self.market.token_id(Token.A),
+            tokenid=self.market.token_id(MyToken.A),
         ).set(token_A_balance)
         keeper_balance_amount.labels(
             accountaddress=self.address,
             assetaddress=self.clob_api.get_conditional_address(),
-            tokenid=self.market.token_id(Token.B),
+            tokenid=self.market.token_id(MyToken.B),
         ).set(token_B_balance)
         keeper_balance_amount.labels(
             accountaddress=self.address,

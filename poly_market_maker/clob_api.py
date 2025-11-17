@@ -199,6 +199,12 @@ class ClobApi:
         asks.sort(key=lambda x: x[0])
         return bids, asks
     
+    def get_bid_ask(self, token_id: int):
+        """Return best bid/ask from cached values."""
+        bids, asks = self.get_bids_asks(token_id)
+        best_bid = bids[0][0] if bids else None
+        best_ask = asks[0][0] if asks else None
+        return best_bid, best_ask
 
     def get_condition_id_by_slug(self, slug: str):
         url = f"https://gamma-api.polymarket.com/markets/slug/{slug}"
