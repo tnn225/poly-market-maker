@@ -4,6 +4,7 @@ import sys
 import time
 import requests
 
+from poly_market_maker.market import Market
 from py_clob_client.client import ClobClient, ApiCreds, OrderArgs, OpenOrderParams
 from py_clob_client.exceptions import PolyApiException
 
@@ -209,3 +210,12 @@ class ClobApi:
         return resp.json().get("conditionId")
 
 
+    def get_market(self, timestamp: int):
+        slug = f"btc-updown-15m-{timestamp}"
+        print( f"Fetching market for slug: {slug}")
+        condition_id = self.get_condition_id_by_slug(slug)
+
+        return Market(
+            condition_id,
+            self.client.get_collateral_address(),
+        )

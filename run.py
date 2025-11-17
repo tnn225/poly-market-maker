@@ -22,44 +22,42 @@ load_dotenv()                           # Load environment variables from .env f
 
 FUNDER = os.getenv("FUNDER")
 TARGET = os.getenv("TARGET")
-
+DEBUG = True
 
 setup_logging()
 logger = logging.getLogger(__name__)
 
+client = ClobApi()
+
 def main():
-    engine = PriceEngine(symbol="btc/usd", interval_seconds=900)
+    engine = PriceEngine(symbol="btc/usd")
     engine.start()
 
-    client = ClobApi()
-    slug = f"btc-updown-15m-{int(engine.interval_start.timestamp())}"
-    condition_id = client.get_condition_id_by_slug(slug)
+    header = ["timestamp", "price", "bid", "ask"]
 
-    market = Market(
-        condition_id,
-        client.get_collateral_address(),
-    )
-
-    price_feed = PriceFeedClob(market, client)
-
-    print("🚀 PriceEngine started...")
-    header = ["timestamp", "symbol", "price", "delta", "delta_pct", "sigma", "seconds_left", "prob_up", "bid", "ask"]
+    interval = None
+    price_feed = None
 
     try:
         while True:
-            data = engine.get_data()
-            # print(data)
-            # print(market.token_ids)
-            bid, ask = price_feed.get_bid_ask(MyToken.A)
-            # print(bid, ask)
+            time.sleep(1)
+            now = int(time.time())
+            if interval != now // 900:  # 15-min intervals
+                interval = now // 900
+                market = client.get_market(interval * 900) 
+                price_feed = PriceFeedClob(market, client)
+                engine.target_price = engine.price
 
-            if data:
-                row = [data["timestamp"], data["symbol"], data["price"], data["delta"], data["delta_pct"], data["sigma"], data["seconds_left"], data["prob_up"], bid, ask]
-                print(f"BTC={row[2]:.2f} | Δ={row[3]:+.2f} ({row[4]:+.3f}% | σ={row[5]:.6f} | sec_left={int(row[6]):4d} | ProbUp={row[7]:5.3f} | Bid={row[8]} | Ask={row[9]}")
+            price = engine.get_price()
+            timestamp = engine.get_timestamp()
 
-                date = datetime.fromtimestamp(data["timestamp"], tz=timezone.utc).strftime("%Y-%m-%d")
+            if price is not None and timestamp is not None:
+                bid, ask = price_feed.get_bid_ask(MyToken.A)
+                row = [int(timestamp), price, bid, ask]
 
-                path = f"./data/price_data_{date}.csv"
+                date = datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime("%Y-%m-%d")
+
+                path = f"./data/price_{date}.csv"
                 file_exists = os.path.exists(path)
 
                 write_header = False
@@ -73,23 +71,20 @@ def main():
                         write_header = False
 
                     writer.writerow(row)
-
-            # print(data["symbol"], data["price"], data["delta"], data["delta_pct"], data["sigma"], data["seconds_left"], data["prob_up"], bid, ask)
-            time.sleep(1)
+           
 
     except KeyboardInterrupt:
         print("Stopping engine...")
         engine.stop()
         print("Stopped.")
 
-
-    
-
-
 if __name__ == "__main__":
-    while True:
-        try:
-            main()
-        except Exception as e:
-            print("Error occurred, restarting:", e)
-            continue
+    if DEBUG:
+        main()
+    else:
+        while True:
+            try:
+                main()
+            except Exception as e:
+                print("Error occurred, restarting:", e)
+                continue
