@@ -110,7 +110,7 @@ class AMM:
                 price=bid,
                 side=Side.BUY,
                 token=self.token,
-                size=10 #  math_round_down(CAPITAL / bid, 2),  # size = $5 / price
+                size=math_round_down(CAPITAL / bid, 2),  # size = $5 / price
             )
             for bid in self.buy_prices
         ]
@@ -133,6 +133,37 @@ class AMMManager:
     ):
         if not bid or not ask:
             return []
+        
+            self.prediction = PricePrediction()
+        self.engine = PriceEngine(symbol="btc/usd")
+        self.engine.start()
+
+        timestamp = engine.get_timestamp()
+        price = engine.get_price()
+        # target = price
+        # 
+        if timestamp is None or timestamp == last:
+            continue
+        last = timestamp
+        prediction.add_price(timestamp, price)
+
+        now = int(timestamp)
+        seconds_left = 900 - (now % 900)
+        if interval != now // 900:  # 15-min intervals
+            interval = now // 900
+            market = client.get_market(interval * 900) 
+            token_id = market.token_id(MyToken.A)
+            bid, ask = client.get_bid_ask(token_id)
+            order_book = OrderBookEngine(market, token_id, bid, ask)
+            order_book.start()
+
+        bid, ask = order_book.get_bid_ask(market.token_id(MyToken.A))
+        row = [int(timestamp), price, bid, ask]
+        write_row(row)
+
+        prob = prediction.get_probability(price, prediction.target, seconds_left)
+        print(f"{seconds_left}s {price} {price - prediction.target:+6.2f}: Bid: {bid}, Ask: {ask} Up {prob:.4f}")
+
 
         self.amm_a.set_price(bid, ask)
         self.amm_b.set_price(0.99 - bid, 0.99 - ask)

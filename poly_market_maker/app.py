@@ -7,6 +7,7 @@ from poly_market_maker.args import get_args
 from poly_market_maker.price_engine import PriceEngine
 from poly_market_maker.price_feed import PriceFeedClob
 from poly_market_maker.gas import GasStation, GasStrategy
+from poly_market_maker.price_prediction import PricePrediction
 from poly_market_maker.utils import setup_logging, setup_web3
 from poly_market_maker.order import Order, Side
 from poly_market_maker.market import Market
@@ -34,9 +35,6 @@ class App:
         args = get_args(args)
         self.sync_interval = args.sync_interval
 
-        # self.min_tick = args.min_tick
-        # self.min_size = args.min_size
-
         # server to expose the metrics.
         self.metrics_server_port = args.metrics_server_port
         start_http_server(self.metrics_server_port)
@@ -45,12 +43,10 @@ class App:
         # self.address = self.web3.eth.account.from_key(args.private_key).address
         self.address = FUNDER
 
+        self.clob_api = ClobApi()
 
-        self.clob_api = ClobApi(
-            host=args.clob_api_url,
-            chain_id=self.web3.eth.chain_id,
-            private_key=args.private_key,
-        )
+
+
 
         self.gas_station = GasStation(
             strat=GasStrategy(args.gas_strategy),
@@ -91,6 +87,8 @@ class App:
             self.order_book_manager,
             self.price_engine
         )
+
+        
 
     """
     main

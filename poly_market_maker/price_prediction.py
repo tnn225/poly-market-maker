@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+import time
 import pandas as pd
 import numpy as np
 
@@ -11,10 +13,15 @@ VOL_WINDOW = 10000
 
 class PricePrediction:
     def __init__(self):
+        self.target = None
+        self.timestamp = None
         self.sigma = 0.0
         self.mu = 0.0
-        self.prices = deque(maxlen=VOL_WINDOW)  # last N prices
-        self.read_prices()
+        self.prices = deque(maxlen=VOL_WINDOW)  # last N prices 
+        now = int(time.time())
+        date = datetime.fromtimestamp(now, tz=timezone.utc).strftime("%Y-%m-%d")
+        filename = f'./data/price_{date}.csv'
+        self.read_prices(filename)
         self.sigma = self.estimate_sigma()
 
     def read_prices(self, filename='./data/price_2025-11-17.csv'):
@@ -33,6 +40,7 @@ class PricePrediction:
                 self.prices.append(price)
 
                 if timestamp % 900 == 0:
+                    self.timestamp = timestamp
                     self.target = price
                     print(f"Set target price to {self.target} at timestamp {timestamp}")     
 

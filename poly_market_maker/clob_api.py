@@ -36,6 +36,8 @@ class ClobApi:
         )
         self.client.set_api_creds(self.client.create_or_derive_api_creds())
 
+    def get_trades(self, params):
+        return self.client.get_trades(params)
 
     def get_address(self):
         return self.client.get_address()
