@@ -4,6 +4,7 @@ import time
 import threading
 
 from poly_market_maker.clob_api import ClobApi
+from poly_market_maker.my_token import MyToken
 
 MARKET_CHANNEL = "market"
 
@@ -14,6 +15,8 @@ class OrderBookEngine(threading.Thread):
 
         # store token ids
         self.data = [str(token) for token in market.token_ids.values()]
+
+        self.market = market
 
         # orderbook data
         self.best_bid = {}
@@ -128,9 +131,14 @@ class OrderBookEngine(threading.Thread):
             self.best_bid[token] = best_bid
             self.best_ask[token] = best_ask
 
-    def get_bid_ask(self, token):
+    def get_bid_ask_by_token_id(self, token_id: int):
         with self.lock:
-            return self.best_bid.get(token), self.best_ask.get(token)
+            return self.best_bid.get(token_id), self.best_ask.get(token_id)
+
+    def get_bid_ask(self, token: MyToken):
+        token_id = self.market.token_id(token)
+        with self.lock:
+            return self.best_bid.get(token_id), self.best_ask.get(token_id)
 
 
 # ------------------------------------------------------------

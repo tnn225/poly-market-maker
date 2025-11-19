@@ -4,6 +4,7 @@ import os
 import time
 
 from poly_market_maker.args import get_args
+from poly_market_maker.order_book_engine import OrderBookEngine
 from poly_market_maker.price_engine import PriceEngine
 from poly_market_maker.price_feed import PriceFeedClob
 from poly_market_maker.gas import GasStation, GasStrategy
@@ -34,6 +35,7 @@ class App:
 
         args = get_args(args)
         self.sync_interval = args.sync_interval
+        self.refresh_frequency = args.refresh_frequency
 
         # server to expose the metrics.
         self.metrics_server_port = args.metrics_server_port
@@ -45,9 +47,6 @@ class App:
 
         self.clob_api = ClobApi()
 
-
-
-
         self.gas_station = GasStation(
             strat=GasStrategy(args.gas_strategy),
             w3=self.web3,
@@ -56,39 +55,22 @@ class App:
         )
         self.contracts = Contracts(self.web3, self.gas_station)
 
-        self.market = Market(
-            args.condition_id,
-            self.clob_api.get_collateral_address(),
-        )
+        self.engine = PriceEngine(symbol="btc/usd")
+        self.engine.start()
 
-        self.price_feed = PriceFeedClob(self.market, self.clob_api)
-
-        self.order_book_manager = OrderBookManager(
-            args.refresh_frequency, max_workers=1
-        )
-        self.order_book_manager.get_orders_with(self.get_orders)
-        self.order_book_manager.get_balances_with(self.get_balances)
-        self.order_book_manager.cancel_orders_with(
-            lambda order: self.clob_api.cancel_order(order.id)
-        )
-        self.order_book_manager.place_orders_with(self.place_order)
-        self.order_book_manager.cancel_all_orders_with(
-            lambda _: self.clob_api.cancel_all_orders()
-        )
-        self.order_book_manager.start()
-
-        self.price_engine = PriceEngine(symbol="btc/usd", target_price=TARGET, interval_seconds=900)
-        self.price_engine.start()
+        self.timestamp = 0
+        self.prediction = None 
+        self.setup()
 
         self.strategy_manager = StrategyManager(
             args.strategy,
             args.strategy_config,
             self.price_feed,
             self.order_book_manager,
-            self.price_engine
+            self.engine,
+            self.order_book_engine,
+            self.prediction
         )
-
-        
 
     """
     main
@@ -111,11 +93,55 @@ class App:
         time.sleep(5)  # 5 second initial delay so that bg threads fetch the orderbook
         self.logger.info("Startup complete!")
 
+    def setup(self):
+        now = int(time.time())
+        timestamp = now // 900 * 900 
+
+        if self.timestamp < timestamp:
+            self.timestamp = timestamp
+
+            if self.prediction == None: 
+                self.prediction = PricePrediction(self.timestamp)
+
+            if self.prediction.target is None:
+                raise Exception(f"No price target available for current interval {self.timestamp}.")
+
+
+            if self.prediction.target is None:
+                self.logger.error("No price target available for current interval.")
+                raise Exception("No price target available for current interval.")
+
+            self.market = self.clob_api.get_market(timestamp)
+
+            self.price_feed = PriceFeedClob(self.market, self.clob_api)
+
+            self.order_book_manager = OrderBookManager(
+                self.refresh_frequency, max_workers=1
+            )
+            self.order_book_manager.get_orders_with(self.get_orders)
+            self.order_book_manager.get_balances_with(self.get_balances)
+            self.order_book_manager.cancel_orders_with(
+                lambda order: self.clob_api.cancel_order(order.id)
+            )
+            self.order_book_manager.place_orders_with(self.place_order)
+            self.order_book_manager.cancel_all_orders_with(
+                lambda _: self.clob_api.cancel_all_orders()
+            )
+            self.order_book_manager.start()
+
+            self.token_id = self.market.token_id(MyToken.A)
+            bid, ask = self.clob_api.get_bid_ask(self.token_id)
+            self.order_book_engine = OrderBookEngine(self.market, self.token_id, bid, ask)
+            self.order_book_engine.start()
+
     def synchronize(self):
         """
         Synchronize the orderbook by cancelling orders out of bands and placing new orders if necessary
         """
         self.logger.debug("Synchronizing orderbook...")
+
+        self.setup()
+
         self.strategy_manager.synchronize()
         self.logger.debug("Synchronized orderbook!")
 
@@ -175,8 +201,8 @@ class App:
 
         return {
             Collateral: collateral_balance,
-            Token.A: token_A_balance,
-            Token.B: token_B_balance,
+            MyToken.A: token_A_balance,
+            MyToken.B: token_B_balance,
         }
 
     def get_orders(self) -> list[Order]:

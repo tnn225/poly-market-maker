@@ -2,9 +2,11 @@ from enum import Enum
 import json
 import logging
 
+from poly_market_maker.order_book_engine import OrderBookEngine
 from poly_market_maker.orderbook import OrderBookManager
+from poly_market_maker.price_engine import PriceEngine
 from poly_market_maker.price_feed import PriceFeed
-from poly_market_maker.token import Token, Collateral
+from poly_market_maker.my_token import MyToken, Collateral
 from poly_market_maker.constants import MAX_DECIMALS
 
 from poly_market_maker.strategies.base_strategy import BaseStrategy
@@ -33,6 +35,9 @@ class StrategyManager:
         config_path: str,
         price_feed: PriceFeed,
         order_book_manager: OrderBookManager,
+        engine: PriceEngine,
+        order_book_engine: OrderBookEngine,
+        prediction: PriceEngine,
     ) -> BaseStrategy:
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -41,6 +46,9 @@ class StrategyManager:
 
         self.price_feed = price_feed
         self.order_book_manager = order_book_manager
+        self.engine = engine
+        self.order_book_engine = order_book_engine
+        self.prediction = prediction
 
         match Strategy(strategy):
             case Strategy.AMM:
@@ -59,13 +67,12 @@ class StrategyManager:
             self.logger.error(f"{e}")
             return
 
-        token_prices = self.get_token_prices()
-        bid, ask = self.get_bid_ask()
-        self.logger.debug(f"bid: {bid}, ask: {ask}")
-        # self.logger.debug(f"{token_prices}")
-        (orders_to_cancel, orders_to_place) = self.strategy.get_orders(
-            orderbook, bid, ask
-        )
+        timestamp = self.engine.get_timestamp()
+        price = self.engine.get_price()
+        up = self.prediction.get_probability(price, 900 - (timestamp % 900))
+        bid, ask = self.order_book_engine.get_bid_ask(MyToken.A)
+        
+        (orders_to_cancel, orders_to_place) = self.strategy.get_orders(orderbook, bid, ask, up)
 
         self.logger.debug(f"order existing: {len(orderbook.orders)}")
         self.logger.debug(f"order to cancel: {len(orders_to_cancel)}")
@@ -92,14 +99,14 @@ class StrategyManager:
 
     def get_token_prices(self):
         price_a = round(
-            self.price_feed.get_price(Token.A),
+            self.price_feed.get_price(MyToken.A),
             MAX_DECIMALS,
         )
         price_b = round(0.99 - price_a, MAX_DECIMALS)
-        return {Token.A: price_a, Token.B: price_b}
+        return {MyToken.A: price_a, MyToken.B: price_b}
     
     def get_bid_ask(self):
-        return self.price_feed.get_bid_ask(Token.A)
+        return self.price_feed.get_bid_ask(MyToken.A)
 
     def cancel_orders(self, orders_to_cancel):
         if len(orders_to_cancel) > 0:

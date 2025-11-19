@@ -1,7 +1,7 @@
 import itertools
 import logging
 
-from poly_market_maker.token import Token
+from poly_market_maker.my_token import MyToken
 from poly_market_maker.constants import MIN_TICK, MIN_SIZE, MAX_DECIMALS
 from poly_market_maker.order import Order, Side
 
@@ -227,7 +227,7 @@ class Bands:
         collateral_balance: float,
         token_balance: float,
         target_price: float,
-        buy_token: Token,
+        buy_token: MyToken,
     ) -> list[Order]:
         assert isinstance(orders, list)
         assert isinstance(collateral_balance, float)
@@ -280,7 +280,7 @@ class Bands:
 
         return new_orders
 
-    def _new_order(self, price: float, size: float, side: Side, token: Token) -> Order:
+    def _new_order(self, price: float, size: float, side: Side, token: MyToken) -> Order:
         """
         Return sell orders which need to be placed to bring total amounts within all sell bands above minimums
         """

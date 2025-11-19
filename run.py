@@ -58,10 +58,27 @@ def write_row(row):
         # Write the row
         writer.writerow(row)
 
+def get_action(bid, ask, up, down, spread):
+    action = ""
+    if bid and up and bid > 0:
+        value = (up - bid) / bid 
+        if value > spread:
+            action = "BUY"
+    if ask and down and ask < .99:
+        value = (down - (0.99 - ask)) / (1 - ask)
+        if value > spread: 
+            action = "SELL"
+    return action
+
 def main():
     interval = None 
     last = None
-    prediction = PricePrediction()
+
+    now = int(time.time())
+    timestamp = now // 900 * 900 
+    prediction = PricePrediction(timestamp)
+
+    spread = 0.05
 
     while True:
         time.sleep(0.1)
@@ -85,12 +102,21 @@ def main():
             order_book = OrderBookEngine(market, token_id, bid, ask)
             order_book.start()
 
-        bid, ask = order_book.get_bid_ask(market.token_id(MyToken.A))
+        bid, ask = order_book.get_bid_ask(MyToken.A)
+        bid_b, ask_b = order_book.get_bid_ask(MyToken.B)
+        print(f"Bid B: {bid_b}, Ask B: {ask_b}")
         row = [int(timestamp), price, bid, ask]
         write_row(row)
 
-        prob = prediction.get_probability(price, prediction.target, seconds_left)
-        print(f"{seconds_left}s {price} {price - prediction.target:+6.2f}: Bid: {bid}, Ask: {ask} Up {prob:.4f}")
+        up = prediction.get_probability(price, seconds_left)
+        if up is None:
+            print(f"{seconds_left}s {price} Bid: {bid}, Ask: {ask}")
+            continue
+        down = 1 - up 
+
+        action = get_action(bid, ask, up, down, spread)
+
+        print(f"{seconds_left}s {price} {price - prediction.target:+6.2f}: Bid: {bid}, Ask: {ask} Up {up:.4f} Down {down:.4f} {action}")
 
 if __name__ == "__main__":
 

@@ -1,4 +1,4 @@
-from poly_market_maker.token import Token, Collateral
+from poly_market_maker.my_token import MyToken, Collateral
 from poly_market_maker.order import Order, Side
 from poly_market_maker.orderbook import OrderBook
 
@@ -28,11 +28,11 @@ class BandsStrategy(BaseStrategy):
         orders_to_place = []
         orders_to_cancel = []
 
-        for token in Token:
+        for token in MyToken:
             self.logger.debug(f"{token.value} target price: {target_prices[token]}")
 
         # cancel orders
-        for token in Token:
+        for token in MyToken:
             orders = self._orders_by_corresponding_buy_token(orderbook.orders, token)
             orders_to_cancel += self.bands.cancellable_orders(
                 orders, target_prices[token]
@@ -84,7 +84,7 @@ class BandsStrategy(BaseStrategy):
 
         return (orders_to_cancel, orders_to_place)
 
-    def _orders_by_corresponding_buy_token(self, orders: list[Order], buy_token: Token):
+    def _orders_by_corresponding_buy_token(self, orders: list[Order], buy_token: MyToken):
         return list(
             filter(
                 lambda order: self._filter_by_corresponding_buy_token(order, buy_token),
@@ -92,7 +92,7 @@ class BandsStrategy(BaseStrategy):
             )
         )
 
-    def _filter_by_corresponding_buy_token(self, order: Order, buy_token: Token):
+    def _filter_by_corresponding_buy_token(self, order: Order, buy_token: MyToken):
         return (order.side == Side.BUY and order.token == buy_token) or (
             order.side == Side.SELL and order.token != buy_token
         )

@@ -3,6 +3,7 @@ from math import sqrt
 
 from poly_market_maker.my_token import MyToken, Collateral
 from poly_market_maker.order import Order, Side
+from poly_market_maker.orderbook import OrderBook
 from poly_market_maker.utils import math_round_down
 
 CAPITAL = 5
@@ -36,13 +37,13 @@ class AMMConfig:
         p_max: float,
         spread: float,
         delta: float,
-        depth: float,
+        depth: int,
         max_collateral: float,
     ):
         assert isinstance(p_min, float)
         assert isinstance(p_max, float)
         assert isinstance(delta, float)
-        assert isinstance(depth, float)
+        assert isinstance(depth, int)
         assert isinstance(spread, float)
         assert isinstance(max_collateral, float)
 
@@ -55,10 +56,10 @@ class AMMConfig:
 
 
 class AMM:
-    def __init__(self, token: Token, config: AMMConfig):
+    def __init__(self, token: MyToken, config: AMMConfig):
         self.logger = logging.getLogger(self.__class__.__name__)
 
-        assert isinstance(token, Token)
+        assert isinstance(token, MyToken)
 
         # if config.spread >= config.depth:
         #    raise Exception("Depth does not exceed spread.")
@@ -71,22 +72,20 @@ class AMM:
         self.depth = config.depth
         self.max_collateral = config.max_collateral
 
-    def set_price(self, p_i: float):
-        self.p_i = p_i
-        bid = round(self.p_i, 2)
-        self.ask = round(self.p_i + self.spread, 2)
-        self.p_u = round(min(self.ask + self.depth, self.p_max), 2)
-        self.p_l = round(max(bid - self.depth, self.p_min), 2)
-
+    def set_price(self, bid: float, ask: float, up: float):
+        self.bid = bid
+        self.ask = ask 
         self.buy_prices = []
-        logging.info(f"set_price p_i={self.p_i}, p_l={self.p_l}, p_u={self.p_u}, bid={bid}, ask={self.ask}")
-        while self.p_l <= bid <= self.p_u:
-            self.buy_prices.append(bid)
-            bid = round(bid - self.delta, 2)
-        logging.info(f"set_price p_i={self.p_i}, p_l={self.p_l}, p_u={self.p_u}, bid={bid}, ask={self.ask} buy_prices={self.buy_prices}")
+        self.sell_prices = [] 
+        for i in range(int(self.depth)):
+            price = round(bid - i * self.delta, 2)
+            if self.p_min <= price <= self.p_max and price <= up - self.spread:
+                self.buy_prices.append(price)
+        logging.info(f"set_price bid={bid}, ask={ask} buy_prices={self.buy_prices}")
 
     def get_sell_orders(self, balance):
         orders = []
+        return orders
         price = self.ask + self.depth
         size = 10
         max_price = min(0.99, self.ask + self.depth)
@@ -110,11 +109,23 @@ class AMM:
                 price=bid,
                 side=Side.BUY,
                 token=self.token,
-                size=math_round_down(CAPITAL / bid, 2),  # size = $5 / price
+                # size=math_round_down(CAPITAL / bid, 2),  
+                size = 5
             )
             for bid in self.buy_prices
         ]
         return orders
+    
+    def hedge_order(self, size):
+        if self.bid <= 0.01: 
+            self.bid = 0.01
+        # if self.bid < 0.05: 
+        return Order(
+            price=self.bid,
+            side=Side.BUY,
+            token=self.token,
+            size = 1 / self.bid
+        )
 
 class AMMManager:
     def __init__(self, config: AMMConfig):
@@ -123,53 +134,21 @@ class AMMManager:
         self.amm_b = AMM(token=MyToken.B, config=config)
         self.max_collateral = config.max_collateral
         self.p_max = config.p_max
+        self.spread = config.spread
 
-    def get_expected_orders(
-        self,
-        bid, 
-        ask,
-        balances,
-        open_orders,
-    ):
+    def get_expected_orders(self, orderbook: OrderBook, bid: float, ask: float, up: float):
         if not bid or not ask:
             return []
         
-            self.prediction = PricePrediction()
-        self.engine = PriceEngine(symbol="btc/usd")
-        self.engine.start()
+        open_orders = orderbook.orders
+        balances = orderbook.balances
 
-        timestamp = engine.get_timestamp()
-        price = engine.get_price()
-        # target = price
-        # 
-        if timestamp is None or timestamp == last:
-            continue
-        last = timestamp
-        prediction.add_price(timestamp, price)
+        down = 1.0 - up
+        self.amm_a.set_price(bid, ask, up)
+        self.amm_b.set_price(round(1 - ask, 2), round(1 - bid,2), down)
 
-        now = int(timestamp)
-        seconds_left = 900 - (now % 900)
-        if interval != now // 900:  # 15-min intervals
-            interval = now // 900
-            market = client.get_market(interval * 900) 
-            token_id = market.token_id(MyToken.A)
-            bid, ask = client.get_bid_ask(token_id)
-            order_book = OrderBookEngine(market, token_id, bid, ask)
-            order_book.start()
-
-        bid, ask = order_book.get_bid_ask(market.token_id(MyToken.A))
-        row = [int(timestamp), price, bid, ask]
-        write_row(row)
-
-        prob = prediction.get_probability(price, prediction.target, seconds_left)
-        print(f"{seconds_left}s {price} {price - prediction.target:+6.2f}: Bid: {bid}, Ask: {ask} Up {prob:.4f}")
-
-
-        self.amm_a.set_price(bid, ask)
-        self.amm_b.set_price(0.99 - bid, 0.99 - ask)
-
-        sell_orders_a = self.amm_a.get_sell_orders(balances[MyToken.A])
-        sell_orders_b = self.amm_b.get_sell_orders(balances[MyToken.B])
+        # sell_orders_a = self.amm_a.get_sell_orders(balances[MyToken.A])
+        # sell_orders_b = self.amm_b.get_sell_orders(balances[MyToken.B])
 
         buy_orders_a = self.amm_a.get_buy_orders()
         buy_orders_b = self.amm_b.get_buy_orders()
@@ -180,21 +159,25 @@ class AMMManager:
 
         orders = []
 
-        if bid >= 0.70:
-            return sell_orders_a + sell_orders_b + buy_orders_a
+        if balances[MyToken.A] <= max(balances[MyToken.B] + 50, 150):
+            for order in buy_orders_a:
+                # if OrderType(order) not in all_orders:
+                orders.append(order)
         
-        if 0.99 - bid >= 0.70:
-            return sell_orders_a + sell_orders_b + buy_orders_b
-        
-        for i in range(min(len(buy_orders_a), len(buy_orders_b))):
-            buy_order_a = buy_orders_a[i]
-            buy_order_b = buy_orders_b[i]
+        if balances[MyToken.B] <= max(balances[MyToken.A] + 50, 150):
+            for order in buy_orders_b:
+                # if OrderType(order) not in all_orders:
+                orders.append(order)
 
-            order_type_a = OrderType(buy_order_a)
-            order_type_b = OrderType(buy_order_b)
+        HEDGE_PRICE = 0.1
+        HEDGE_SIZE = 10
+        if bid < HEDGE_PRICE and balances[MyToken.A] < balances[MyToken.B] :
+            # print('heging... A')
+            orders.append(self.amm_a.hedge_order(HEDGE_SIZE))
 
-            if order_type_a not in all_orders and order_type_b not in all_orders:
-                orders.append(buy_order_a)
-                orders.append(buy_order_b)
+        if (1 - ask) < HEDGE_PRICE and balances[MyToken.B] < balances[MyToken.A]:
+            # print('heging... B')
+            orders.append(self.amm_b.hedge_order(HEDGE_SIZE))
 
-        return sell_orders_a + sell_orders_b + orders
+        return orders
+    

@@ -1,7 +1,7 @@
 from enum import Enum
 from py_clob_client.order_builder.constants import BUY, SELL
 
-from poly_market_maker.market import Token
+from poly_market_maker.market import MyToken
 
 
 class Side(Enum):
@@ -18,14 +18,14 @@ class Side(Enum):
 
 
 class Order:
-    def __init__(self, size: float, price: float, side: Side, token: Token, id=None):
+    def __init__(self, size: float, price: float, side: Side, token: MyToken, id=None):
         if isinstance(size, int):
             size = float(size)
 
         assert isinstance(size, float)
         assert isinstance(price, float)
         assert isinstance(side, Side)
-        assert isinstance(token, Token)
+        assert isinstance(token, MyToken)
         if id is not None:
             assert isinstance(id, str)
 

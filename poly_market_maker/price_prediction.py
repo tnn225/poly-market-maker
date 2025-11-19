@@ -12,9 +12,9 @@ from scipy.stats import norm
 VOL_WINDOW = 10000
 
 class PricePrediction:
-    def __init__(self):
+    def __init__(self, timestamp: int):
         self.target = None
-        self.timestamp = None
+        self.timestamp = timestamp
         self.sigma = 0.0
         self.mu = 0.0
         self.prices = deque(maxlen=VOL_WINDOW)  # last N prices 
@@ -23,6 +23,10 @@ class PricePrediction:
         filename = f'./data/price_{date}.csv'
         self.read_prices(filename)
         self.sigma = self.estimate_sigma()
+
+    def set_timestamp(self, timestamp, price):
+        self.timestamp = timestamp
+        self.target = price
 
     def read_prices(self, filename='./data/price_2025-11-17.csv'):
         with open(filename, mode='r', newline='') as file:
@@ -39,8 +43,7 @@ class PricePrediction:
                 price = float(row[1])  
                 self.prices.append(price)
 
-                if timestamp % 900 == 0:
-                    self.timestamp = timestamp
+                if timestamp == self.timestamp:
                     self.target = price
                     print(f"Set target price to {self.target} at timestamp {timestamp}")     
 
@@ -51,12 +54,15 @@ class PricePrediction:
         log_returns = np.diff(np.log(self.prices))
         return np.std(log_returns)
 
-    def get_probability(self, price, target, seconds_left):
+    def get_probability(self, price, seconds_left):
+        if self.target is None:
+            return None 
+
         # print(price, target, seconds_left)
         if seconds_left <= 0 or self.sigma == 0:
-            return float(price >= target)
+            return float(price >= self.target)
         
-        z = (np.log(price / target) - (self.mu - 0.5 * self.sigma**2) * seconds_left) / (self.sigma * np.sqrt(seconds_left))
+        z = (np.log(price / self.target) - (self.mu - 0.5 * self.sigma**2) * seconds_left) / (self.sigma * np.sqrt(seconds_left))
         return norm.cdf(z)
     
     def add_price(self, timestamp, price):
@@ -65,4 +71,5 @@ class PricePrediction:
         self.sigma = self.estimate_sigma()
         if timestamp % 900 == 0:
             print(f"Updating target price to {price} at timestamp {timestamp}")
+            self.timestamp = timestamp
             self.target = price     
