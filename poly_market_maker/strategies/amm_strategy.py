@@ -2,6 +2,7 @@ from poly_market_maker.orderbook import OrderBook
 from poly_market_maker.constants import MIN_SIZE
 from poly_market_maker.order import Order
 
+from poly_market_maker.strategies import amm
 from poly_market_maker.strategies.amm import AMMManager, AMMConfig
 from poly_market_maker.strategies.base_strategy import BaseStrategy
 
@@ -48,17 +49,20 @@ class AMMStrategy(BaseStrategy):
             max_collateral=config.get("max_collateral"),
         )
 
-    def get_orders(self, orderbook: OrderBook, bid: float, ask: float, up: float):
+    def get_orders(self, orderbook: OrderBook, bid: float, ask: float, up: float, seconds_left: int):
         orders_to_cancel = []
         orders_to_place = []
 
-        expected_orders = self.amm_manager.get_expected_orders(orderbook, bid, ask, up)
+        expected_orders = self.amm_manager.get_expected_orders(orderbook, bid, ask, up, seconds_left)
 
         expected_order_types = set(OrderType(order) for order in expected_orders)
 
         orders_to_cancel += list(
             filter(
-                lambda order: OrderType(order) not in expected_order_types,
+                lambda order: (
+                    OrderType(order) not in expected_order_types
+                    and order.size == amm.CAPITAL
+                ),
                 orderbook.orders,
             )
         )

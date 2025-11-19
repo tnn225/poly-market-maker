@@ -76,10 +76,7 @@ def main():
 
     now = int(time.time())
     timestamp = now // 900 * 900 
-    prediction = PricePrediction(timestamp)
-
-    spread = 0.05
-
+ 
     while True:
         time.sleep(0.1)
 
@@ -90,11 +87,10 @@ def main():
         if timestamp is None or timestamp == last:
             continue
         last = timestamp
-        prediction.add_price(timestamp, price)
-
+ 
         now = int(timestamp)
         seconds_left = 900 - (now % 900)
-        if interval != now // 900:  # 15-min intervals
+        if interval == None or now // 900 > interval:  # 15-min intervals
             interval = now // 900
             market = client.get_market(interval * 900) 
             token_id = market.token_id(MyToken.A)
@@ -107,16 +103,7 @@ def main():
         print(f"Bid B: {bid_b}, Ask B: {ask_b}")
         row = [int(timestamp), price, bid, ask]
         write_row(row)
-
-        up = prediction.get_probability(price, seconds_left)
-        if up is None:
-            print(f"{seconds_left}s {price} Bid: {bid}, Ask: {ask}")
-            continue
-        down = 1 - up 
-
-        action = get_action(bid, ask, up, down, spread)
-
-        print(f"{seconds_left}s {price} {price - prediction.target:+6.2f}: Bid: {bid}, Ask: {ask} Up {up:.4f} Down {down:.4f} {action}")
+        print(f"{seconds_left}s {price} Bid: {bid}, Ask: {ask}")
 
 if __name__ == "__main__":
 

@@ -136,7 +136,7 @@ class AMMManager:
         self.p_max = config.p_max
         self.spread = config.spread
 
-    def get_expected_orders(self, orderbook: OrderBook, bid: float, ask: float, up: float):
+    def get_expected_orders(self, orderbook: OrderBook, bid: float, ask: float, up: float, seconds_left: int):
         if not bid or not ask:
             return []
         
@@ -159,23 +159,31 @@ class AMMManager:
 
         orders = []
 
-        if balances[MyToken.A] <= max(balances[MyToken.B] + 50, 150):
-            for order in buy_orders_a:
-                # if OrderType(order) not in all_orders:
-                orders.append(order)
+        if balances[MyToken.A] >= max(balances[MyToken.B] + 50, 150):
+            buy_orders_a = [] 
+        if balances[MyToken.B] >= max(balances[MyToken.A] + 50, 150):
+            buy_orders_b = []
+        if up > 0.5: 
+            orders = buy_orders_a + buy_orders_b
+        else:
+            orders = buy_orders_b + buy_orders_a
         
-        if balances[MyToken.B] <= max(balances[MyToken.A] + 50, 150):
-            for order in buy_orders_b:
-                # if OrderType(order) not in all_orders:
-                orders.append(order)
+            # for order in buy_orders_a:
+            #     # if OrderType(order) not in all_orders:
+            #     orders.append(order)
+        
+        
+            # for order in buy_orders_b:
+            #     # if OrderType(order) not in all_orders:
+            #     orders.append(order)
 
         HEDGE_PRICE = 0.1
         HEDGE_SIZE = 10
-        if bid < HEDGE_PRICE and balances[MyToken.A] < balances[MyToken.B] :
+        if (bid < HEDGE_PRICE or seconds_left < 60 * 5) and balances[MyToken.A] + HEDGE_SIZE < balances[MyToken.B] :
             # print('heging... A')
             orders.append(self.amm_a.hedge_order(HEDGE_SIZE))
 
-        if (1 - ask) < HEDGE_PRICE and balances[MyToken.B] < balances[MyToken.A]:
+        if ((1 - ask) < HEDGE_PRICE or seconds_left < 60 * 5) and balances[MyToken.B] + HEDGE_SIZE < balances[MyToken.A]:
             # print('heging... B')
             orders.append(self.amm_b.hedge_order(HEDGE_SIZE))
 

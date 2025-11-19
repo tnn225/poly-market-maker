@@ -55,22 +55,18 @@ class App:
         )
         self.contracts = Contracts(self.web3, self.gas_station)
 
-        self.engine = PriceEngine(symbol="btc/usd")
-        self.engine.start()
+        self.price_engine = PriceEngine(symbol="btc/usd")
+        self.price_engine.start()
+
+        self.order_book_engine = None
 
         self.timestamp = 0
         self.prediction = None 
-        self.setup()
 
-        self.strategy_manager = StrategyManager(
-            args.strategy,
-            args.strategy_config,
-            self.price_feed,
-            self.order_book_manager,
-            self.engine,
-            self.order_book_engine,
-            self.prediction
-        )
+        self.args_strategy = args.strategy
+        self.args_strategy_config = args.strategy_config
+
+        self.setup()
 
     """
     main
@@ -111,7 +107,7 @@ class App:
                 self.logger.error("No price target available for current interval.")
                 raise Exception("No price target available for current interval.")
 
-            self.market = self.clob_api.get_market(timestamp)
+            self.market = self.clob_api.get_market(self.timestamp)
 
             self.price_feed = PriceFeedClob(self.market, self.clob_api)
 
@@ -130,9 +126,21 @@ class App:
             self.order_book_manager.start()
 
             self.token_id = self.market.token_id(MyToken.A)
-            bid, ask = self.clob_api.get_bid_ask(self.token_id)
-            self.order_book_engine = OrderBookEngine(self.market, self.token_id, bid, ask)
+            
+            if self.order_book_engine:
+                self.order_book_engine.stop()
+            self.order_book_engine = OrderBookEngine(self.market) 
             self.order_book_engine.start()
+
+            self.strategy_manager = StrategyManager(
+                self.args_strategy,
+                self.args_strategy_config,
+                self.price_feed,
+                self.order_book_manager,
+                self.price_engine,
+                self.order_book_engine,
+                self.prediction
+            )
 
     def synchronize(self):
         """

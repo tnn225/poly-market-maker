@@ -70,9 +70,11 @@ class StrategyManager:
         timestamp = self.engine.get_timestamp()
         price = self.engine.get_price()
         up = self.prediction.get_probability(price, 900 - (timestamp % 900))
+
+        seconds_left = 900 - timestamp % 900
         bid, ask = self.order_book_engine.get_bid_ask(MyToken.A)
         
-        (orders_to_cancel, orders_to_place) = self.strategy.get_orders(orderbook, bid, ask, up)
+        (orders_to_cancel, orders_to_place) = self.strategy.get_orders(orderbook, bid, ask, up, seconds_left)
 
         self.logger.debug(f"order existing: {len(orderbook.orders)}")
         self.logger.debug(f"order to cancel: {len(orders_to_cancel)}")
