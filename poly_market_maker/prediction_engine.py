@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import os
 import time
 import pandas as pd
 import numpy as np
@@ -12,23 +13,18 @@ from scipy.stats import norm
 VOL_WINDOW = 10000
 
 class PricePrediction:
-    def __init__(self, timestamp: int):
+    def __init__(self):
         self.target = None
-        self.timestamp = timestamp
         self.sigma = 0.0
         self.mu = 0.0
         self.prices = deque(maxlen=VOL_WINDOW)  # last N prices 
-        now = int(time.time())
-        date = datetime.fromtimestamp(now, tz=timezone.utc).strftime("%Y-%m-%d")
+        date = datetime.fromtimestamp(int(time.time()), tz=timezone.utc).strftime("%Y-%m-%d")
         filename = f'./data/price_{date}.csv'
-        self.read_prices(filename)
-        self.sigma = self.estimate_sigma()
+        if os.path.exists(filename):
+            self.read_prices(filename)
+            self.sigma = self.estimate_sigma()
 
-    def set_timestamp(self, timestamp, price):
-        self.timestamp = timestamp
-        self.target = price
-
-    def read_prices(self, filename='./data/price_2025-11-17.csv'):
+    def read_prices(self, filename):
         with open(filename, mode='r', newline='') as file:
             csv_reader = csv.reader(file)
 
@@ -42,10 +38,6 @@ class PricePrediction:
                 timestamp = int(row[0])
                 price = float(row[1])  
                 self.prices.append(price)
-
-                if timestamp == self.timestamp:
-                    self.target = price
-                    print(f"Set target price to {self.target} at timestamp {timestamp}")     
 
     def estimate_sigma(self):
         if len(self.prices) < 2:
@@ -64,12 +56,3 @@ class PricePrediction:
         
         z = (np.log(price / self.target) - (self.mu - 0.5 * self.sigma**2) * seconds_left) / (self.sigma * np.sqrt(seconds_left))
         return norm.cdf(z)
-    
-    def add_price(self, timestamp, price):
-        # print(f"Add price to {price} at timestamp {timestamp}")
-        self.prices.append(price)
-        self.sigma = self.estimate_sigma()
-        if timestamp % 900 == 0:
-            print(f"Updating target price to {price} at timestamp {timestamp}")
-            self.timestamp = timestamp
-            self.target = price     

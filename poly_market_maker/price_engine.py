@@ -1,3 +1,5 @@
+import csv
+import os
 import websocket
 import threading
 import json
@@ -18,10 +20,34 @@ class PriceEngine(threading.Thread):
         self.price = None
         self.timestamp = None
 
+        self.target = None
+        self.interval = 0
+        date = datetime.fromtimestamp(int(time.time()), tz=timezone.utc).strftime("%Y-%m-%d")
+        filename = f'./data/price_{date}.csv'
+        if os.path.exists(filename):
+            self.read_prices(filename)
+
         # Thread safety
         self.lock = threading.Lock()
         self._stop_event = threading.Event()
         self.ws = None
+
+    def read_prices(self, filename):
+        with open(filename, mode='r', newline='') as file:
+            csv_reader = csv.reader(file)
+
+            # Optionally, skip the header row if present
+            header = next(csv_reader)
+            print(f"Header: {header}")
+
+            # Iterate and print each data row
+            for row in csv_reader:
+                # print(f"Data Row: {row}")
+                timestamp = int(row[0])
+                price = float(row[1])
+                if timestamp % 900 == 0:
+                    self.interval = timestamp
+                    self.target = price
 
     # ==========================================================
     #                WEBSOCKET CALLBACKS
@@ -73,6 +99,10 @@ class PriceEngine(threading.Thread):
             self.timestamp = ts / 1000
             self.price = value
 
+            if self.timestamp % 900 == 0:
+                self.interval = self.timestamp
+                self.target = self.price
+
     def on_error(self, ws, error):
         logging.error(f"WebSocket error: {error}")
 
@@ -117,24 +147,44 @@ class PriceEngine(threading.Thread):
     def get_timestamp(self):
         with self.lock:
             return self.timestamp
-
+        
+    def get_interval(self):
+        with self.lock:
+            return self.interval
+        
+    def get_target(self):
+        with self.lock:
+            return self.target
+        
+    def get_data(self):
+        with self.lock:
+            return {
+                'timestamp': self.timestamp,
+                'price': self.price,
+                'target': self.target,
+                'interval': self.interval
+            }
 
 # ==========================================================
 #                 HOW TO USE THE ENGINE
 # ==========================================================
 
 if __name__ == "__main__":
-    engine = PriceEngine(symbol="btc/usd")
-    engine.start()
+    price_engine = PriceEngine(symbol="btc/usd")
+    price_engine.start()
 
     print("🚀 PriceEngine started...")
 
     try:
         while True:
-            print("Current Price:", engine.get_price())
+            timestamp = price_engine.get_timestamp()
+            price = price_engine.get_timestamp()
+            interval = price_engine.get_interval()
+            target = price_engine.get_target()
+            print(f"timestamp {timestamp} price {price} interval {interval} target {target} ")
             time.sleep(1)
 
     except KeyboardInterrupt:
         print("Stopping engine...")
-        engine.stop()
+        price_engine.stop()
         print("Stopped.")

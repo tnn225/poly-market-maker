@@ -8,7 +8,7 @@ from poly_market_maker.order_book_engine import OrderBookEngine
 from poly_market_maker.price_engine import PriceEngine
 from poly_market_maker.price_feed import PriceFeedClob
 from poly_market_maker.gas import GasStation, GasStrategy
-from poly_market_maker.price_prediction import PricePrediction
+from poly_market_maker.prediction_engine import PricePrediction
 from poly_market_maker.utils import setup_logging, setup_web3
 from poly_market_maker.order import Order, Side
 from poly_market_maker.market import Market
@@ -60,8 +60,7 @@ class App:
 
         self.order_book_engine = None
 
-        self.timestamp = 0
-        self.prediction = None 
+        self.interval = 0
 
         self.args_strategy = args.strategy
         self.args_strategy_config = args.strategy_config
@@ -90,24 +89,15 @@ class App:
         self.logger.info("Startup complete!")
 
     def setup(self):
-        now = int(time.time())
-        timestamp = now // 900 * 900 
+        interval = int(time.time()) // 900 * 900 
 
-        if self.timestamp < timestamp:
-            self.timestamp = timestamp
+        if self.interval < interval:
+            self.interval = interval
+            self.market = self.clob_api.get_market(self.interval)
 
-            if self.prediction == None: 
-                self.prediction = PricePrediction(self.timestamp)
-
-            if self.prediction.target is None:
-                raise Exception(f"No price target available for current interval {self.timestamp}.")
-
-
-            if self.prediction.target is None:
-                self.logger.error("No price target available for current interval.")
-                raise Exception("No price target available for current interval.")
-
-            self.market = self.clob_api.get_market(self.timestamp)
+            data = self.price_engine.get_data()
+            if data['interval'] != interval:
+                raise Exception(f"No price target for {self.interval} {data}")
 
             self.price_feed = PriceFeedClob(self.market, self.clob_api)
 
@@ -125,8 +115,8 @@ class App:
             )
             self.order_book_manager.start()
 
-            self.token_id = self.market.token_id(MyToken.A)
-            
+            self.prediction = PricePrediction()
+
             if self.order_book_engine:
                 self.order_book_engine.stop()
             self.order_book_engine = OrderBookEngine(self.market) 
