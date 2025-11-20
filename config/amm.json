@@ -1,7 +1,7 @@
 {
   "p_min": 0.01,
-  "p_max": 0.90,
-  "spread": 0.01,
+  "p_max": 0.99,
+  "spread": 0.02,
   "delta": 0.01,
   "depth": 5,
   "max_collateral": 100.0

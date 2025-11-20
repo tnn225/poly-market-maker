@@ -35,9 +35,9 @@ class StrategyManager:
         config_path: str,
         price_feed: PriceFeed,
         order_book_manager: OrderBookManager,
-        engine: PriceEngine,
+        price_engine: PriceEngine,
         order_book_engine: OrderBookEngine,
-        prediction: PriceEngine,
+        prediction_engine: PriceEngine,
     ) -> BaseStrategy:
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -46,9 +46,9 @@ class StrategyManager:
 
         self.price_feed = price_feed
         self.order_book_manager = order_book_manager
-        self.engine = engine
+        self.price_engine = price_engine
         self.order_book_engine = order_book_engine
-        self.prediction = prediction
+        self.prediction_engine = prediction_engine
 
         match Strategy(strategy):
             case Strategy.AMM:
@@ -67,11 +67,13 @@ class StrategyManager:
             self.logger.error(f"{e}")
             return
 
-        timestamp = self.engine.get_timestamp()
-        price = self.engine.get_price()
-        up = self.prediction.get_probability(price, 900 - (timestamp % 900))
-
+        data = self.price_engine.get_data()
+        price = data['price']
+        target = data['target']
+        timestamp = data['timestamp']
         seconds_left = 900 - timestamp % 900
+        up = self.prediction_engine.get_probability(price, target, seconds_left)
+
         bid, ask = self.order_book_engine.get_bid_ask(MyToken.A)
         
         (orders_to_cancel, orders_to_place) = self.strategy.get_orders(orderbook, bid, ask, up, seconds_left)

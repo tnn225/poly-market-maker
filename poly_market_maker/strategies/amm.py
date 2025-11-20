@@ -137,6 +137,11 @@ class AMMManager:
         self.spread = config.spread
 
     def get_expected_orders(self, orderbook: OrderBook, bid: float, ask: float, up: float, seconds_left: int):
+        self.logger.info(
+            f"get_expected_orders called with params: bid={bid}, ask={ask}, up={up}, seconds_left={seconds_left}, "
+            f"orderbook_orders={len(orderbook.orders)}, balances={orderbook.balances}"
+        )
+        
         if not bid or not ask:
             return []
         
@@ -188,4 +193,4 @@ class AMMManager:
             orders.append(self.amm_b.hedge_order(HEDGE_SIZE))
 
         return orders
-    
+
