@@ -61,7 +61,7 @@ class AMMStrategy(BaseStrategy):
             filter(
                 lambda order: (
                     OrderType(order) not in expected_order_types
-                    and order.size == amm.CAPITAL
+                    and order.size == amm.SIZE
                 ),
                 orderbook.orders,
             )

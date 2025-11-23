@@ -1,14 +1,18 @@
 import logging
 from math import sqrt
+from unicodedata import bidirectional
 
 from poly_market_maker.my_token import MyToken, Collateral
 from poly_market_maker.order import Order, Side
 from poly_market_maker.orderbook import OrderBook
 from poly_market_maker.utils import math_round_down
 
-CAPITAL = 5
+SIZE = 5
+MAX_IMBALANCE = 50
+MAX_HEDGE_IMBALANCE = 100
 
-class OrderType:
+
+class OrderType:        
     def __init__(self, order: Order):
         self.price = order.price
         self.side = order.side
@@ -63,7 +67,6 @@ class AMM:
 
         # if config.spread >= config.depth:
         #    raise Exception("Depth does not exceed spread.")
-
         self.token = token
         self.p_min = config.p_min
         self.p_max = config.p_max
@@ -73,59 +76,74 @@ class AMM:
         self.max_collateral = config.max_collateral
 
     def set_price(self, bid: float, ask: float, up: float):
-        self.bid = bid
+        self.bid = bid 
         self.ask = ask 
+        self.up = up 
         self.buy_prices = []
         self.sell_prices = [] 
+
+        if self.up < 0.99:
+            return
+
         for i in range(int(self.depth)):
             price = round(bid - i * self.delta, 2)
-            if self.p_min <= price <= self.p_max and price <= up - self.spread:
+            if self.p_min <= price <= self.p_max:
                 self.buy_prices.append(price)
-        logging.info(f"set_price bid={bid}, ask={ask} buy_prices={self.buy_prices}")
+
+            price = round(ask + i * self.delta, 2)
+            if 0.01 <= price <= 0.99:
+                self.sell_prices.append(price)
+        
+        logging.info(f"set_price bid={bid}, ask={ask} buy_prices={self.buy_prices} sell_prices={self.sell_prices}")
 
     def get_sell_orders(self, balance):
         orders = []
-        return orders
-        price = self.ask + self.depth
-        size = 10
-        max_price = min(0.99, self.ask + self.depth)
-        while price <= max_price and size <= balance:
-            orders.append(
-                Order(
-                    price=price,
-                    side=Side.SELL,
-                    token=self.token,
-                    size=size,
+        for price in self.sell_prices:
+            if SIZE <= balance:
+                balance -= SIZE 
+                orders.append(
+                    Order(
+                        price=price,
+                        side=Side.SELL,
+                        token=self.token,
+                        size=SIZE,
+                    )
                 )
-            )
-            price = round(price + self.delta, 2)
-            balance -= size
         return orders
 
-    def get_buy_orders(self):
+    def get_buy_orders(self, imbalance):
+        if self.up < 0.99:
+            return []
+        if imbalance > MAX_IMBALANCE:
+            return [] 
         """Return buy orders with fixed capital per level"""
         orders = [
             Order(
-                price=bid,
+                price=price,
                 side=Side.BUY,
                 token=self.token,
                 # size=math_round_down(CAPITAL / bid, 2),  
-                size = 5
+                size = SIZE
             )
-            for bid in self.buy_prices
+            for price in self.buy_prices
         ]
         return orders
-    
-    def hedge_order(self, size):
-        if self.bid <= 0.01: 
-            self.bid = 0.01
-        # if self.bid < 0.05: 
-        return Order(
-            price=self.bid,
-            side=Side.BUY,
-            token=self.token,
-            size = 1 / self.bid
-        )
+
+    def get_hedge_orders(self, imbalance):
+        """Return buy orders with fixed capital per level"""
+        if imbalance > MAX_HEDGE_IMBALANCE:
+            return []
+        orders = [
+            Order(
+                price=price,
+                side=Side.BUY,
+                token=self.token,
+                # size=math_round_down(CAPITAL / bid, 2),  
+                size = 1 / price 
+            )
+            for price in [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1]
+        ]
+        return orders
 
 class AMMManager:
     def __init__(self, config: AMMConfig):
@@ -137,60 +155,41 @@ class AMMManager:
         self.spread = config.spread
 
     def get_expected_orders(self, orderbook: OrderBook, bid: float, ask: float, up: float, seconds_left: int):
-        self.logger.info(
-            f"get_expected_orders called with params: bid={bid}, ask={ask}, up={up}, seconds_left={seconds_left}, "
-            f"orderbook_orders={len(orderbook.orders)}, balances={orderbook.balances}"
-        )
-        
-        if not bid or not ask:
-            return []
+        orders = []
+        if not bid:
+            bid = 0
+        if not ask:
+            ask = 1
         
         open_orders = orderbook.orders
         balances = orderbook.balances
 
+        up = round(up, 3)
         down = 1.0 - up
+        imbalance = balances[MyToken.A] - balances[MyToken.B]
+        percent = abs(imbalance) / (MAX_IMBALANCE * seconds_left / 900)
+
+        self.logger.info(
+            f"get_expected_orders called with params: bid={bid}, ask={ask}, up={up}, down={down} seconds_left={seconds_left}, "
+            f"orderbook_orders={len(orderbook.orders)}, balances={orderbook.balances}"
+        )
+
         self.amm_a.set_price(bid, ask, up)
         self.amm_b.set_price(round(1 - ask, 2), round(1 - bid,2), down)
 
-        # sell_orders_a = self.amm_a.get_sell_orders(balances[MyToken.A])
-        # sell_orders_b = self.amm_b.get_sell_orders(balances[MyToken.B])
+        sell_orders_a = self.amm_a.get_sell_orders(imbalance)
+        sell_orders_b = self.amm_b.get_sell_orders(-imbalance)
 
-        buy_orders_a = self.amm_a.get_buy_orders()
-        buy_orders_b = self.amm_b.get_buy_orders()
+        buy_orders_a = self.amm_a.get_buy_orders(imbalance)
+        buy_orders_b = self.amm_b.get_buy_orders(-imbalance)
 
-        # assert len(buy_orders_a) == len(buy_orders_b)
+        hedge_orders_a = self.amm_a.get_hedge_orders(imbalance)
+        hedge_orders_b = self.amm_b.get_hedge_orders(-imbalance)
         
-        all_orders = set(OrderType(order) for order in open_orders)
+        print(f"percent {percent}, imbalance {imbalance}")
 
-        orders = []
-
-        if balances[MyToken.A] >= max(balances[MyToken.B] + 50, 150):
-            buy_orders_a = [] 
-        if balances[MyToken.B] >= max(balances[MyToken.A] + 50, 150):
-            buy_orders_b = []
-        if up > 0.5: 
-            orders = buy_orders_a + buy_orders_b
-        else:
-            orders = buy_orders_b + buy_orders_a
-        
-            # for order in buy_orders_a:
-            #     # if OrderType(order) not in all_orders:
-            #     orders.append(order)
-        
-        
-            # for order in buy_orders_b:
-            #     # if OrderType(order) not in all_orders:
-            #     orders.append(order)
-
-        HEDGE_PRICE = 0.1
-        HEDGE_SIZE = 10
-        if (bid < HEDGE_PRICE or seconds_left < 60 * 5) and balances[MyToken.A] + HEDGE_SIZE < balances[MyToken.B] :
-            # print('heging... A')
-            orders.append(self.amm_a.hedge_order(HEDGE_SIZE))
-
-        if ((1 - ask) < HEDGE_PRICE or seconds_left < 60 * 5) and balances[MyToken.B] + HEDGE_SIZE < balances[MyToken.A]:
-            # print('heging... B')
-            orders.append(self.amm_b.hedge_order(HEDGE_SIZE))
+        orders = buy_orders_a + buy_orders_b
 
         return orders
+
 
