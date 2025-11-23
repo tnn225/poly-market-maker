@@ -8,7 +8,7 @@ from py_clob_client.clob_types import TradeParams
 from poly_market_maker.my_token import MyToken
 
 # ---------------- CONFIG ----------------
-ADDRESS = "0x6031b6eed1c97e853c6e0f03ad3ce3529351f96d"
+ADDRESS = "0x16f027dbaec0e4884ed8ea79567914f8f7e4a28d"
 IS_MAKER = False    # True = maker trades, False = taker trades
 # ----------------------------------------
 
@@ -23,7 +23,7 @@ BASE_URL = "https://data-api.polymarket.com/trades"
 
 headers = ['timestamp', 'proxyWallet', 'side', 'price', 'size', 'asset']
 
-def fetch_trades(condition_id: list, token_1):
+def fetch_trades(condition_ids: list, token_1):
     limit = 500
     offset = 0
     trades = []
@@ -32,44 +32,58 @@ def fetch_trades(condition_id: list, token_1):
         params = {
             "limit": limit,
             "offset": offset,
-            "market": condition_id,
-            # "user": user
+            "market": ",".join(condition_ids),
+            "takerOnly": False,
+            "user": ADDRESS
         }
         resp = requests.get(BASE_URL, params=params)
         print(f"Fetching trades with params: {params}: {resp}")
         resp.raise_for_status()
-        for data in resp.json():
+
+        if resp.status_code != 200:
+            print(f"Error fetching trades: {resp.status_code}")
+            return []
+
+        data = resp.json()
+        print(f"Data: {len(data)}")
+
+        for data in data:
             trade = {}
             for header in headers:
                 trade[header] = data.get(header, None)
+            
+            trade['size'] = round(float(trade['size']), 2)
+            trade['price'] = round(float(trade['price']),2)
+
             trades.append(trade)
             if trade['side'] == 'SELL':
                 trade['size'] = -float(trade['size'])
 
-            if trade['asset'] == str(token_1):
-                trade['token 1'] = float(trade['size'])
-                trade['price 1'] = float(trade['price'])
+            if str(trade['asset']) == str(token_1):
+                trade['token 1'] = round(trade['size'], 2)
+                trade['price 1'] = round(trade['price'], 2)
 
                 trade['token 2'] = 0
-                trade['price 2'] = 1 - trade['price 1']
+                trade['price 2'] = round(1 - trade['price 1'], 2)
             else:
-                trade['token 2'] = float(trade['size'])
-                trade['price 2'] = float(trade['price'])
+                trade['token 2'] = round(trade['size'], 2)
+                trade['price 2'] = round(trade['price'], 2)
 
                 trade['token 1'] = 0
-                trade['price 1'] = 1 - trade['price 2']
- 
-        if len(resp.json()) < limit:
+                trade['price 1'] = round(1 - trade['price 2'], 2)
+
+        if len(data) < limit:
             break
-        offset += len(resp.json())
+        offset += len(data)
 
     return trades
 
-def save_trades(filename: str, trades: list):
+def save_trades(interval: int, trades: list):
     headers = ['timestamp', 'proxyWallet', 'token 1', 'price 1', 'token 2', 'price 2']
+    trades = sorted(trades, key=lambda x: int(x['timestamp']))
 
     # File path
-    path = f"./data/trades_{filename}.csv"
+    path = f"./data/trades_{interval}.csv"
  
     with open(path, mode="w", newline="") as file:
         writer = csv.writer(file)
@@ -84,11 +98,11 @@ def save_trades(filename: str, trades: list):
 
 def main():
     now = int(time.time())
-    interval = now // 900 - 100
-    market = client.get_market(interval * 900) 
+    interval = (now // 900 - 100) * 900
+    market = client.get_market(interval) 
 
-    trades = fetch_trades(market.condition_id, market.token_id(MyToken.A))
-    save_trades(market.condition_id, trades)
+    trades = fetch_trades([str(market.condition_id)], market.token_id(MyToken.A))
+    save_trades(interval, trades)
     print(len(trades), "trades found.")
     # for trade in trades:
     #     print(trade)
