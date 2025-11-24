@@ -8,7 +8,7 @@ from py_clob_client.clob_types import TradeParams
 from poly_market_maker.my_token import MyToken
 
 # ---------------- CONFIG ----------------
-ADDRESS = "0x16f027dbaec0e4884ed8ea79567914f8f7e4a28d"
+ADDRESS = "0x5248313731287b61d714ab9df655442d6ed28aa2"
 IS_MAKER = False    # True = maker trades, False = taker trades
 # ----------------------------------------
 
@@ -98,12 +98,13 @@ def save_trades(interval: int, trades: list):
 
 def main():
     now = int(time.time())
-    interval = (now // 900 - 100) * 900
-    market = client.get_market(interval) 
+    for i in range(100):
+        interval = (now // 900 - i - 1) * 900
+        market = client.get_market(interval) 
 
-    trades = fetch_trades([str(market.condition_id)], market.token_id(MyToken.A))
-    save_trades(interval, trades)
-    print(len(trades), "trades found.")
+        trades = fetch_trades([str(market.condition_id)], market.token_id(MyToken.A))
+        save_trades(interval, trades)
+        print(len(trades), "trades found.")
     # for trade in trades:
     #     print(trade)
 

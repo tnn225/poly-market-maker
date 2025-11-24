@@ -1,4 +1,5 @@
 import logging
+import numpy as np
 from math import sqrt
 from unicodedata import bidirectional
 
@@ -75,26 +76,36 @@ class AMM:
         self.depth = config.depth
         self.max_collateral = config.max_collateral
 
-    def set_price(self, bid: float, ask: float, up: float):
-        self.bid = bid 
-        self.ask = ask 
-        self.up = up 
+    def set_sell_prices(self, ask: float):
+        self.sell_prices = []
+        for i in range(int(self.depth)):
+            price = round(ask + i * self.delta, 2)
+            if 0.01 <= price <= 0.99 and price >= self.up + self.spread:
+                self.sell_prices.append(price)
+
+    def set_buy_prices(self, bid: float):
         self.buy_prices = []
-        self.sell_prices = [] 
-
-        if self.up < 0.99:
-            return
-
         for i in range(int(self.depth)):
             price = round(bid - i * self.delta, 2)
-            if self.p_min <= price <= self.p_max:
+            if self.p_min <= price <= self.p_max and price <= self.up - self.spread:
                 self.buy_prices.append(price)
 
-            price = round(ask + i * self.delta, 2)
-            if 0.01 <= price <= 0.99:
-                self.sell_prices.append(price)
+    def set_hedge_prices(self, bid: float, up: float):
+        self.hedge_prices = []
+        for i in range(int(self.depth)):
+            price = round(bid - i * self.delta, 2)
+            if 0.01 <= price <= 0.1 and price < up:
+                self.hedge_prices.append(price)
+
+    def set_price(self, bid: float, ask: float, up: float):
+        self.up = up
+        self.bid = bid 
+        self.ask = ask 
+        self.set_sell_prices(ask)
+        self.set_hedge_prices(bid, up)
+        self.set_buy_prices(bid)
         
-        logging.info(f"set_price bid={bid}, ask={ask} buy_prices={self.buy_prices} sell_prices={self.sell_prices}")
+        logging.info(f"set_price bid={bid}, ask={ask}, up={up}, buy_prices={self.buy_prices} sell_prices={self.sell_prices}")
 
     def get_sell_orders(self, balance):
         orders = []
@@ -112,8 +123,6 @@ class AMM:
         return orders
 
     def get_buy_orders(self, imbalance):
-        if self.up < 0.99:
-            return []
         if imbalance > MAX_IMBALANCE:
             return [] 
         """Return buy orders with fixed capital per level"""
@@ -133,6 +142,7 @@ class AMM:
         """Return buy orders with fixed capital per level"""
         if imbalance > MAX_HEDGE_IMBALANCE:
             return []
+        
         orders = [
             Order(
                 price=price,
@@ -141,7 +151,7 @@ class AMM:
                 # size=math_round_down(CAPITAL / bid, 2),  
                 size = 1 / price 
             )
-            for price in [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1]
+            for price in self.hedge_prices
         ]
         return orders
 
@@ -177,8 +187,8 @@ class AMMManager:
         self.amm_a.set_price(bid, ask, up)
         self.amm_b.set_price(round(1 - ask, 2), round(1 - bid,2), down)
 
-        sell_orders_a = self.amm_a.get_sell_orders(imbalance)
-        sell_orders_b = self.amm_b.get_sell_orders(-imbalance)
+        sell_orders_a = self.amm_a.get_sell_orders(balances[MyToken.A])
+        sell_orders_b = self.amm_b.get_sell_orders(balances[MyToken.B])
 
         buy_orders_a = self.amm_a.get_buy_orders(imbalance)
         buy_orders_b = self.amm_b.get_buy_orders(-imbalance)
@@ -188,8 +198,8 @@ class AMMManager:
         
         print(f"percent {percent}, imbalance {imbalance}")
 
-        orders = buy_orders_a + buy_orders_b
-
+        orders = buy_orders_a + buy_orders_b + sell_orders_a + sell_orders_b + hedge_orders_a + hedge_orders_b
+    
         return orders
 
 

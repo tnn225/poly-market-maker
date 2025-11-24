@@ -6,6 +6,7 @@ from poly_market_maker.order_book_engine import OrderBookEngine
 from poly_market_maker.orderbook import OrderBookManager
 from poly_market_maker.price_engine import PriceEngine
 from poly_market_maker.price_feed import PriceFeed
+from poly_market_maker.prediction_engine import PredictionEngine
 from poly_market_maker.my_token import MyToken, Collateral
 from poly_market_maker.constants import MAX_DECIMALS
 
@@ -37,7 +38,7 @@ class StrategyManager:
         order_book_manager: OrderBookManager,
         price_engine: PriceEngine,
         order_book_engine: OrderBookEngine,
-        prediction_engine: PriceEngine,
+        prediction_engine: PredictionEngine,
     ) -> BaseStrategy:
         self.logger = logging.getLogger(self.__class__.__name__)
 

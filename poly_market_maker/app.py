@@ -8,7 +8,7 @@ from poly_market_maker.order_book_engine import OrderBookEngine
 from poly_market_maker.price_engine import PriceEngine
 from poly_market_maker.price_feed import PriceFeedClob
 from poly_market_maker.gas import GasStation, GasStrategy
-from poly_market_maker.prediction_engine import PricePrediction
+from poly_market_maker.prediction_engine import PredictionEngine
 from poly_market_maker.utils import setup_logging, setup_web3
 from poly_market_maker.order import Order, Side
 from poly_market_maker.market import Market
@@ -65,6 +65,7 @@ class App:
         self.args_strategy = args.strategy
         self.args_strategy_config = args.strategy_config
 
+
         self.setup()
 
     """
@@ -115,12 +116,12 @@ class App:
             )
             self.order_book_manager.start()
 
-            self.prediction = PricePrediction()
-
             if self.order_book_engine:
                 self.order_book_engine.stop()
             self.order_book_engine = OrderBookEngine(self.market) 
             self.order_book_engine.start()
+
+            self.prediction_engine = PredictionEngine()
 
             self.strategy_manager = StrategyManager(
                 self.args_strategy,
@@ -129,7 +130,7 @@ class App:
                 self.order_book_manager,
                 self.price_engine,
                 self.order_book_engine,
-                self.prediction
+                self.prediction_engine
             )
 
     def synchronize(self):

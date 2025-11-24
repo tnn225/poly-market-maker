@@ -1,23 +1,16 @@
 import csv
 from datetime import datetime, timezone
-
-from poly_market_maker.order_book_engine import OrderBookEngine
-from poly_market_maker.price_engine import PriceEngine
-
 import logging
-from prometheus_client import start_http_server
 import os  
 import time
 
+from poly_market_maker.order_book_engine import OrderBookEngine
 from poly_market_maker.price_engine import PriceEngine
 from poly_market_maker.price_feed import PriceFeedClob
-from poly_market_maker.my_token import MyToken, Collateral
-
-
-from poly_market_maker.price_prediction import PricePrediction
-from poly_market_maker.utils import setup_logging, setup_web3
-from poly_market_maker.market import Market
+from poly_market_maker.my_token import MyToken
+from poly_market_maker.utils import setup_logging
 from poly_market_maker.clob_api import ClobApi
+from poly_market_maker.prediction_engine import PredictionEngine
 
 from dotenv import load_dotenv          # Environment variable management
 load_dotenv()                           # Load environment variables from .env file
@@ -32,6 +25,7 @@ logger = logging.getLogger(__name__)
 client = ClobApi()
 engine = PriceEngine(symbol="btc/usd")
 engine.start()
+prediction_engine = PredictionEngine()
 header = ["timestamp", "price", "bid", "ask"]
 
 
@@ -82,8 +76,9 @@ def main():
 
         timestamp = engine.get_timestamp()
         price = engine.get_price()
-        # target = price
-        # 
+        data = engine.get_data()
+        target = data.get('target')
+        
         if timestamp is None or timestamp == last:
             continue
         last = timestamp
@@ -93,27 +88,28 @@ def main():
         if interval == None or now // 900 > interval:  # 15-min intervals
             interval = now // 900
             market = client.get_market(interval * 900) 
-            token_id = market.token_id(MyToken.A)
-            bid, ask = client.get_bid_ask(token_id)
-            order_book = OrderBookEngine(market, token_id, bid, ask)
+            if 'order_book' in locals():
+                order_book.stop()
+            order_book = OrderBookEngine(market)
             order_book.start()
 
         bid, ask = order_book.get_bid_ask(MyToken.A)
         bid_b, ask_b = order_book.get_bid_ask(MyToken.B)
-        print(f"Bid B: {bid_b}, Ask B: {ask_b}")
+        # print(f"Bid B: {bid_b}, Ask B: {ask_b}")
+        
+        # Calculate probability if target is available
+        up = None
+        if target is not None and price is not None:
+            up = prediction_engine.get_probability(price, target, seconds_left)
+        
         row = [int(timestamp), price, bid, ask]
         write_row(row)
-        print(f"{seconds_left}s {price} Bid: {bid}, Ask: {ask}")
+        
+        if target is not None and up is not None:
+            delta = price - target
+            print(f"{seconds_left} {price} {delta:.4f} Bid: {bid}, Ask: {ask}, Up: {up:.3f}")
+        else:
+            print(f"{seconds_left} {price} Bid: {bid}, Ask: {ask}")
 
 if __name__ == "__main__":
-
-    if DEBUG:
-        main()
-    else:
-        while True:
-            try:
-                main()
-            except Exception as e:
-                print("Error occurred, restarting:", e)
-                continue
-
+    main()
