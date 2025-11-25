@@ -206,7 +206,7 @@ class PredictionEngine:
         
         if seconds_left <= 0:
             return float(price >= target)
-
+        
         delta_bin = self.get_delta_bin(delta)
         seconds_left_bin = self.get_seconds_left_bin(seconds_left)
         
