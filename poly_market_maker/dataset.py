@@ -141,6 +141,7 @@ class FTTransformerModel:
 class Dataset:
     def __init__(self):
         self._delta_percentiles = None
+        self.feature_cols = ['delta', 'percent', 'log_return', 'time', 'seconds_left', 'bid', 'ask']
         self._read_dates()
         self._add_target_and_is_up()
         self._train_test_split()

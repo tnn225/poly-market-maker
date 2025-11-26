@@ -25,7 +25,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-class Dataset:
+class DatasetRegression:
     def __init__(self):
         self._delta_percentiles = None
         self._read_dates()
