@@ -2,7 +2,7 @@ from enum import Enum
 import json
 import logging
 
-from poly_market_maker.model import Model
+from poly_market_maker.models import Model
 from poly_market_maker.order_book_engine import OrderBookEngine
 from poly_market_maker.orderbook import OrderBookManager
 from poly_market_maker.price_engine import PriceEngine
@@ -14,6 +14,9 @@ from poly_market_maker.constants import MAX_DECIMALS
 from poly_market_maker.strategies.base_strategy import BaseStrategy
 from poly_market_maker.strategies.amm_strategy import AMMStrategy
 from poly_market_maker.strategies.bands_strategy import BandsStrategy
+
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.linear_model import LogisticRegression
 
 DEBUG = False
 
@@ -40,7 +43,6 @@ class StrategyManager:
         price_engine: PriceEngine,
         order_book_engine: OrderBookEngine,
         prediction_engine: PredictionEngine,
-        model: Model
     ) -> BaseStrategy:
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -52,7 +54,8 @@ class StrategyManager:
         self.price_engine = price_engine
         self.order_book_engine = order_book_engine
         self.prediction_engine = prediction_engine
-        self.model = model 
+        self.model = Model("RandomForestClassifier", RandomForestClassifier(n_estimators=1000, max_depth=10, min_samples_split=100, random_state=42, n_jobs=-1))
+        self.model.load()
 
         match Strategy(strategy):
             case Strategy.AMM:
@@ -76,11 +79,18 @@ class StrategyManager:
         target = data['target']
         timestamp = data['timestamp']
         seconds_left = 900 - timestamp % 900
-        # up = self.prediction_engine.get_probability(price, target, seconds_left)
-        up = self.model.get_prediction(price, target, seconds_left, bid, ask)
-
-        bid, ask = self.order_book_engine.get_bid_ask(MyToken.A)
         
+        if price is None or target is None or seconds_left is None:
+            self.logger.error(f"Price, target, or seconds_left is None")
+            return
+        
+        bid, ask = self.order_book_engine.get_bid_ask(MyToken.A)
+        if bid is None or ask is None:
+            self.logger.error(f"Bid or ask is None")
+            return
+        
+        up = self.model.get_probability(price, target, seconds_left, bid, ask)
+
         (orders_to_cancel, orders_to_place) = self.strategy.get_orders(orderbook, bid, ask, up, seconds_left)
 
         self.logger.debug(f"order existing: {len(orderbook.orders)}")

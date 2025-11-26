@@ -9,7 +9,7 @@ from poly_market_maker.orderbook import OrderBook
 from poly_market_maker.utils import math_round_down
 
 SIZE = 5
-MAX_IMBALANCE = 50
+MAX_IMBALANCE = 5
 MAX_HEDGE_IMBALANCE = 100
 
 
@@ -76,6 +76,13 @@ class AMM:
         self.depth = config.depth
         self.max_collateral = config.max_collateral
 
+    def set_buy_prices(self, bid: float):
+        self.buy_prices = []
+        for i in range(int(self.depth)):
+            price = round(bid - i * self.delta, 2)
+            if self.p_min <= price <= self.p_max and price <= self.up - self.spread:
+                self.buy_prices.append(price)
+
     def set_sell_prices(self, ask: float):
         self.sell_prices = []
         for i in range(int(self.depth)):
@@ -83,12 +90,6 @@ class AMM:
             if 0.01 <= price <= 0.99 and price >= self.up + self.spread:
                 self.sell_prices.append(price)
 
-    def set_buy_prices(self, bid: float):
-        self.buy_prices = []
-        for i in range(int(self.depth)):
-            price = round(bid - i * self.delta, 2)
-            if self.p_min <= price <= self.p_max and price <= self.up - self.spread:
-                self.buy_prices.append(price)
 
     def set_hedge_prices(self, bid: float, up: float):
         self.hedge_prices = []
@@ -190,15 +191,25 @@ class AMMManager:
         sell_orders_a = self.amm_a.get_sell_orders(balances[MyToken.A])
         sell_orders_b = self.amm_b.get_sell_orders(balances[MyToken.B])
 
-        buy_orders_a = self.amm_a.get_buy_orders(imbalance)
-        buy_orders_b = self.amm_b.get_buy_orders(-imbalance)
+        if balances[MyToken.A] < 50:
+            buy_orders_a = self.amm_a.get_buy_orders(imbalance)
+        else:
+            buy_orders_a = []
+
+        if balances[MyToken.B] < 50:
+            buy_orders_b = self.amm_b.get_buy_orders(-imbalance)
+        else:
+            buy_orders_b = []
+
+        # buy_orders_a = self.amm_a.get_buy_orders(imbalance) if balances[MyToken.A] <= 25 else []
+        # buy_orders_b = self.amm_b.get_buy_orders(-imbalance) if balances[MyToken.B] <= 25 else []
 
         hedge_orders_a = self.amm_a.get_hedge_orders(imbalance)
         hedge_orders_b = self.amm_b.get_hedge_orders(-imbalance)
         
         print(f"percent {percent}, imbalance {imbalance}")
 
-        orders = buy_orders_a + buy_orders_b + sell_orders_a + sell_orders_b + hedge_orders_a + hedge_orders_b
+        orders = buy_orders_a + buy_orders_b # + sell_orders_a + sell_orders_b + hedge_orders_a + hedge_orders_b
     
         return orders
 

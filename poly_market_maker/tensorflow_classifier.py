@@ -1,15 +1,23 @@
+import os
+
 import tensorflow as tf
 import numpy as np
 from poly_market_maker.dataset import Dataset
 
-class Model:
-    def __init__(self):
-        self.dataset = Dataset()
+class TensorflowClassifier:
+    def __init__(self, filename=None):
         self.model = None
         self.feature_cols = ['delta', 'percent', 'log_return', 'time', 'seconds_left', 'bid', 'ask']
-        self.label_col = 'label'  # binary classification target (is_up)
+        self.label_col = 'label' 
+        self.filename = filename
+        if filename is not None and os.path.exists(filename) and filename.endswith('.keras'):
+            self.model = tf.keras.models.load_model(filename)
+        else:
+            self.model = self.train(filename=filename, batch_size=64)
 
-    def train(self, batch_size=64):
+    def train(self, filename=None, batch_size=64):
+        self.dataset = Dataset()
+
         X = self.dataset.train_df[self.feature_cols].astype('float32').values
         y = self.dataset.train_df[self.label_col].astype('float32').values
 
@@ -58,20 +66,22 @@ class Model:
             epochs=20,
             verbose=1
         )
+        if filename is not None:
+            self.model.save(filename, save_format='keras')
+        return self.model
 
-    def predict(self, batch_size=64):
+    def predict(self, df, batch_size=64):
         """
         Generate predictions for the test dataset.
 
         Returns a numpy array of predictions.
         """
         if self.model is None:
-            raise ValueError("Model has not been trained yet. Call train() first.")
+            raise ValueError("Model has not been trained yet. Call train() first.")        
         
-        if not hasattr(self.dataset, 'test_df'):
-            raise ValueError("Test dataset not available. Call dataset.train_test_split() first.")
-        
-        X = self.dataset.test_df[self.feature_cols].astype('float32').values
+        X = df[self.feature_cols].astype('float32').values
+        if hasattr(X, "values"):
+            X = X.values
         self.y_pred = self.model.predict(X, batch_size=batch_size).flatten()
         return self.y_pred
 
@@ -93,72 +103,12 @@ class Model:
             'ask': float(ask),
         }
    
-        features = np.array(
-            [[row[k] for k in self.feature_cols]],
-            dtype='float32'
-        )
-
-        prediction = self.model.predict(features, batch_size=1).flatten()[0]
+        X = np.array([[row[k] for k in self.feature_cols]], dtype='float32')
+        prediction = self.model.predict(X).flatten()[0]
         return float(np.clip(prediction, 0.0, 1.0))
 
-    def evaluate(self, spread: float = 0.05):
-        """
-        Evaluate the classifier on the test dataset.
-        """
-        if self.model is None:
-            raise ValueError("Model has not been trained yet. Call train() first.")
-
-        probs = self.predict()
-
-        if not hasattr(self.dataset, 'test_df'):
-            raise ValueError("Test dataset not available. Call dataset.train_test_split() first.")
-        
-        test_df = self.dataset.test_df.copy()
-        test_df['probability'] = np.clip(probs, 0.0, 1.0)
-        
-        metrics = self.dataset.evaluate_model_metrics(
-            test_df, 
-            probability_column='probability', 
-            spread=spread
-        )
-        
-        summary, buy_df = self.dataset.evaluate_strategy(
-            test_df, 
-            spread=spread, 
-            probability_column='probability'
-        )
-        
-        # Combine metrics
-        evaluation_results = {
-            **metrics,
-            **summary
-        }
-        
-        print("\n" + "="*80)
-        print("Model Evaluation Results")
-        print("="*80)
-        print(f"Accuracy: {metrics['accuracy']:.4f}")
-        print(f"Precision: {metrics['precision']:.4f}")
-        print(f"Recall: {metrics['recall']:.4f}")
-        print(f"F1 Score: {metrics['f1_score']:.4f}")
-        print(f"ROC AUC: {metrics['roc_auc']:.4f}")
-        print(f"Total P&L: {metrics['total_pnl']:.2f}")
-        print(f"\nStrategy Summary:")
-        print(f"  Total rows: {summary['total_rows']}")
-        print(f"  Eligible rows: {summary['eligible_rows']}")
-        print(f"  Buy trades: {summary['buy_trades']}")
-        print(f"  Total revenue: {summary['total_revenue']:.2f}")
-        print(f"  Total cost: {summary['total_cost']:.2f}")
-        print(f"  Total P&L: {summary['total_pnl']:.2f}")
-        print(f"  Avg P&L per trade: {summary['avg_pnl_per_trade']:.4f}")
-        print("="*80 + "\n")
-        
-        return evaluation_results
-
 def main():
-    model = Model()
-    model.train()
-    model.evaluate()
+    model = TensorflowClassifier(filename='./data/models/tensorflow.keras')
 
     prob = model.get_prediction(87576.878879, 87628.002972, 686, 0.4, 0.41)
     print(f'Probability {prob:.4f}')
