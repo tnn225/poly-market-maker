@@ -9,7 +9,7 @@ import csv
 
 from collections import deque
 
-from lightgbm import LGBMRegressor
+# from lightgbm import LGBMRegressor
 
 from scipy.stats import norm
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
@@ -19,6 +19,10 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error
 
 SPREAD = 0.05
 DAYS = 7
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 class Dataset:
@@ -26,6 +30,10 @@ class Dataset:
         self._delta_percentiles = None
         self._read_dates()
         self._add_target_and_is_up()
+        self._train_test_split()
+        self.feature_cols = ['delta', 'percent', 'log_return', 'time', 'seconds_left', 'bid', 'ask']
+
+
 
     def _read_dates(self):
         today = datetime.now()
@@ -108,6 +116,7 @@ class Dataset:
         price_vals = self.df['price'].astype(float).to_numpy()
         target_vals = self.df['target'].astype(float).to_numpy()
         self.df["delta"] = price_vals - target_vals
+        self.df["percent"] = (price_vals - target_vals) / target_vals
         self.df["log_return"] = np.log(price_vals / target_vals)
         
         
@@ -117,7 +126,7 @@ class Dataset:
 
         self.df = self.df.drop(columns=['interval'])
 
-    def train_test_split(self, test_ratio: float = 0.2):
+    def _train_test_split(self, test_ratio: float = 0.2):
         df_sorted = self.df.sort_values('timestamp').reset_index(drop=True)
         split_idx = int(len(df_sorted) * (1 - test_ratio))
         split_idx = max(1, min(split_idx, len(df_sorted) - 1))
@@ -127,14 +136,46 @@ class Dataset:
         self.train_df['label'] = self.train_df['is_up'].astype(float) - self.train_df['bid'].astype(float)
         self.test_df['label'] = self.test_df['is_up'].astype(float) - self.test_df['bid'].astype(float)
 
+        train_start = datetime.fromtimestamp(self.train_df['timestamp'].iloc[0], tz=timezone.utc)
+        train_end = datetime.fromtimestamp(self.train_df['timestamp'].iloc[-1], tz=timezone.utc)
+        test_start = datetime.fromtimestamp(self.test_df['timestamp'].iloc[0], tz=timezone.utc)
+        test_end = datetime.fromtimestamp(self.test_df['timestamp'].iloc[-1], tz=timezone.utc)
+
+        logger.info(
+            "train_df: %d rows (%s → %s)",
+            len(self.train_df),
+            train_start.strftime("%Y-%m-%d %H:%M"),
+            train_end.strftime("%Y-%m-%d %H:%M"),
+        )
+        logger.info(
+            "test_df: %d rows (%s → %s)",
+            len(self.test_df),
+            test_start.strftime("%Y-%m-%d %H:%M"),
+            test_end.strftime("%Y-%m-%d %H:%M"),
+        )
+
         return self.train_df, self.test_df
+
+    def get_X(self, price, target, seconds_left, bid, ask):
+        row = {
+            'delta': float(price - target),
+            'percent': float(price - target) / target,
+            'log_return': float(np.log(price / target)),
+            'time':  float(seconds_left / 900.0),
+            'seconds_left': seconds_left,
+            'bid': bid,
+            'ask': ask, 
+        }
+   
+        return np.array([[row[k] for k in self.feature_cols]], dtype='float32')
+
 
     def evaluate_strategy(self, df: pd.DataFrame, spread: float = 0.05, probability_column: str = 'probability'):
         if probability_column not in df.columns:
             raise ValueError(f"Dataframe must contain '{probability_column}' column for evaluation.")
 
         eval_df = df.dropna(subset=[probability_column, 'bid', 'is_up']).copy()
-        eval_df['action'] = (eval_df[probability_column] - spread > eval_df['bid']) & (eval_df['bid'] > 0)
+        eval_df['action'] = (eval_df[probability_column] > spread) & (eval_df['bid'] > 0)
 
         buy_df = eval_df[eval_df['action']].copy()
         buy_df['revenue'] = buy_df['is_up'].astype(float)
@@ -178,28 +219,24 @@ class Dataset:
 
 def main():
     dataset = Dataset()
+    train_df = dataset.train_df
+    test_df = dataset.test_df
 
-    train_df, test_df = dataset.train_test_split()
+    feature_cols = ['delta', 'percent', 'log_return', 'time', 'seconds_left', 'bid', 'ask']
+    #feature_cols = ['delta', 'time']
 
-    # print(train_df.head())
-    # print(test_df.head())
-
-    # feature_cols = ['log_return', 'time', 'seconds_left']
-    feature_cols = ['delta', 'time']
-
-    print(train_df[feature_cols].isna().sum())
-    print(train_df['label'].isna().sum())
+    # print(dataset.train_df[feature_cols].isna().sum())
+    # print(dataset.train_df['label'].isna().sum())
 
 
     candidate_models = []
 
-    # candidate_models.append(("LightGBM", LGBMClassifier(n_estimators=200, max_depth=-1, learning_rate=0.05, random_state=42,)))
-
+ 
     # candidate_models.append(("LGBMRegressor", LGBMRegressor(n_estimators=1000, max_depth=-1, learning_rate=0.01, random_state=42)))
-    candidate_models.append(("RandomForestRegressor", RandomForestRegressor(n_estimators=500, max_depth=6, min_samples_split=50, random_state=42, n_jobs=-1)))
+    candidate_models.append(("RandomForestRegressor", RandomForestRegressor(n_estimators=200, max_depth=10, min_samples_split=50, random_state=42, n_jobs=-1)))
     # candidate_models.append(("GradientBoostingRegressor", GradientBoostingRegressor(n_estimators=1000, learning_rate=0.01, max_depth=6, random_state=42)))
     # candidate_models.append(("LinearRegression", LinearRegression()))
-    # candidate_models.append(("MLPRegressor", MLPRegressor(hidden_layer_sizes=(100, 20), activation='relu', solver='adam', learning_rate_init=0.01, max_iter=10000, random_state=42)))
+    # candidate_models.append(("MLPRegressor", MLPRegressor(hidden_layer_sizes=(100, 30, 10, 3), activation='relu', solver='adam', learning_rate_init=0.0001, max_iter=1000000, random_state=42)))
 
     model_results = []
     for name, model in candidate_models:
@@ -216,9 +253,13 @@ def main():
     best_model_name = results_df.iloc[0]['model']
     test_df['probability'] = test_df[f'prob_{best_model_name}']
 
-    # summary, buy_df = dataset.evaluate_strategy(test_df, spread=SPREAD, probability_column='probability')
-    # print(summary)
-    # print(buy_df.head())
+    summary, buy_df = dataset.evaluate_strategy(test_df, spread=SPREAD, probability_column='probability')
+    print(summary)
+    print(buy_df.head())
+
+    X = dataset.get_X(100000, 99100, 1, 0.30, 0.45)
+    pnl = candidate_models[0][1].predict(X)
+    print(f"pnl {pnl}")
 
 if __name__ == "__main__":
     main()

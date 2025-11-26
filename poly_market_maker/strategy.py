@@ -2,6 +2,7 @@ from enum import Enum
 import json
 import logging
 
+from poly_market_maker.model import Model
 from poly_market_maker.order_book_engine import OrderBookEngine
 from poly_market_maker.orderbook import OrderBookManager
 from poly_market_maker.price_engine import PriceEngine
@@ -39,6 +40,7 @@ class StrategyManager:
         price_engine: PriceEngine,
         order_book_engine: OrderBookEngine,
         prediction_engine: PredictionEngine,
+        model: Model
     ) -> BaseStrategy:
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -50,6 +52,7 @@ class StrategyManager:
         self.price_engine = price_engine
         self.order_book_engine = order_book_engine
         self.prediction_engine = prediction_engine
+        self.model = model 
 
         match Strategy(strategy):
             case Strategy.AMM:
@@ -73,7 +76,8 @@ class StrategyManager:
         target = data['target']
         timestamp = data['timestamp']
         seconds_left = 900 - timestamp % 900
-        up = self.prediction_engine.get_probability(price, target, seconds_left)
+        # up = self.prediction_engine.get_probability(price, target, seconds_left)
+        up = self.model.get_prediction(price, target, seconds_left, bid, ask)
 
         bid, ask = self.order_book_engine.get_bid_ask(MyToken.A)
         

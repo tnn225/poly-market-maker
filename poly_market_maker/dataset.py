@@ -14,6 +14,9 @@ from lightgbm import LGBMClassifier
 from scipy.stats import norm
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
+
+
+
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import (
     accuracy_score,
@@ -23,15 +26,124 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
+
+import torch
+from torch import nn
+from torch.utils.data import DataLoader, TensorDataset
+
 SPREAD = 0.01
 DAYS = 7
 logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s"
+)
+
+class FTTransformerClassifier(nn.Module):
+    def __init__(self, input_dim, d_model=64, nhead=4, num_layers=2, dropout=0.2):
+        super().__init__()
+        self.tokenizer = nn.Linear(1, d_model)
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=d_model,
+            nhead=nhead,
+            dim_feedforward=d_model * 2,
+            dropout=dropout,
+            batch_first=True,
+            activation="gelu",
+        )
+        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, d_model))
+        self.head = nn.Sequential(
+            nn.LayerNorm(d_model),
+            nn.Linear(d_model, d_model // 2),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(d_model // 2, 1),
+        )
+        self.input_dim = input_dim
+
+    def forward(self, x):
+        # x: (batch, features)
+        x = x.unsqueeze(-1)  # (batch, features, 1)
+        tokens = self.tokenizer(x)  # (batch, features, d_model)
+        batch_size = tokens.size(0)
+        cls_tokens = self.cls_token.expand(batch_size, -1, -1)
+        tokens = torch.cat([cls_tokens, tokens], dim=1)
+        encoded = self.encoder(tokens)
+        cls_out = encoded[:, 0, :]
+        return self.head(cls_out).squeeze(-1)
+
+
+class FTTransformerModel:
+    def __init__(
+        self,
+        input_dim,
+        d_model=64,
+        nhead=4,
+        num_layers=2,
+        dropout=0.2,
+        lr=1e-3,
+        epochs=5,
+        batch_size=256,
+        device=None,
+    ):
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.epochs = epochs
+        self.batch_size = batch_size
+        self.model = FTTransformerClassifier(
+            input_dim=input_dim,
+            d_model=d_model,
+            nhead=nhead,
+            num_layers=num_layers,
+            dropout=dropout,
+        ).to(self.device)
+        self.criterion = nn.BCEWithLogitsLoss()
+        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=lr, weight_decay=1e-4)
+
+    def fit(self, X, y):
+        if hasattr(X, "values"):
+            X = X.values
+        if hasattr(y, "values"):
+            y = y.values
+
+        tensor_x = torch.tensor(np.asarray(X, dtype=np.float32), dtype=torch.float32)
+        tensor_y = torch.tensor(np.asarray(y, dtype=np.float32), dtype=torch.float32)
+        dataset = TensorDataset(tensor_x, tensor_y)
+        loader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
+
+        self.model.train()
+        for epoch in range(self.epochs):
+            total_loss = 0.0
+            for xb, yb in loader:
+                xb = xb.to(self.device)
+                yb = yb.to(self.device)
+                self.optimizer.zero_grad()
+                logits = self.model(xb)
+                loss = self.criterion(logits, yb)
+                loss.backward()
+                self.optimizer.step()
+                total_loss += loss.item() * xb.size(0)
+            avg_loss = total_loss / len(loader.dataset)
+            logger.debug(f"FTTransformer epoch {epoch+1}/{self.epochs} loss={avg_loss:.5f}")
+        return self
+
+    def predict_proba(self, X):
+        if hasattr(X, "values"):
+            X = X.values
+        tensor_x = torch.tensor(np.asarray(X, dtype=np.float32), dtype=torch.float32).to(self.device)
+        self.model.eval()
+        with torch.no_grad():
+            logits = self.model(tensor_x)
+            probs = torch.sigmoid(logits).cpu().numpy()
+        probs = np.clip(probs, 1e-6, 1 - 1e-6)
+        return np.vstack([1 - probs, probs]).T
 
 class Dataset:
     def __init__(self):
         self._delta_percentiles = None
         self._read_dates()
         self._add_target_and_is_up()
+        self._train_test_split()
 
     def _read_dates(self):
         today = datetime.now()
@@ -124,7 +236,7 @@ class Dataset:
 
         self.df = self.df.drop(columns=['interval'])
 
-    def train_test_split(self, test_ratio: float = 0.2):
+    def _train_test_split(self, test_ratio: float = 0.2):
         df_sorted = self.df.sort_values('timestamp').reset_index(drop=True)
         split_idx = int(len(df_sorted) * (1 - test_ratio))
         split_idx = max(1, min(split_idx, len(df_sorted) - 1))
@@ -189,8 +301,8 @@ class Dataset:
 
 def main():
     dataset = Dataset()
-
-    train_df, test_df = dataset.train_test_split()
+    train_df = dataset.train_df
+    test_df = dataset.test_df
 
     # print(train_df.head())
     # print(test_df.head())
@@ -201,11 +313,15 @@ def main():
 
     candidate_models = []
 
-    # candidate_models.append(("LGBMClassifier", LGBMClassifier(n_estimators=1000, max_depth=-1, learning_rate=0.01, random_state=42,)))
-    candidate_models.append(("RandomForestClassifier", RandomForestClassifier(n_estimators=1000, max_depth=3, min_samples_split=50, random_state=42, n_jobs=-1)))
-    #candidate_models.append(("GradientBoostingClassifier", GradientBoostingClassifier(n_estimators=1000, learning_rate=0.01, max_depth=3, random_state=42)))
-    #candidate_models.append(("LogisticRegression", LogisticRegression(max_iter=1000, C=0.5, solver='lbfgs')))
-    #candidate_models.append(("MLPClassifier", MLPClassifier(hidden_layer_sizes=(1000, 100, 10), activation='relu', solver='adam', learning_rate_init=0.01, max_iter=10000, random_state=42)))
+    candidate_models.append(("RandomForestClassifier", RandomForestClassifier(n_estimators=300, max_depth=10, min_samples_split=50, random_state=42, n_jobs=-1)))
+    # candidate_models.append(("LGBMClassifier", LGBMClassifier(n_estimators=300, max_depth=-1, learning_rate=0.01, random_state=42,)))
+    # candidate_models.append(("GradientBoostingClassifier", GradientBoostingClassifier(n_estimators=300, learning_rate=0.01, max_depth=3, random_state=42)))
+    # candidate_models.append(("LogisticRegression", LogisticRegression(max_iter=300, C=0.5, solver='lbfgs')))
+    # candidate_models.append(("MLPClassifier", MLPClassifier(hidden_layer_sizes=(64, 32, 16), activation='relu', solver='adam', learning_rate_init=0.01, max_iter=10000, random_state=42)))
+    candidate_models.append(("FTTransformer", FTTransformerModel(input_dim=len(feature_cols), d_model=64, nhead=4, num_layers=2, dropout=0.2, epochs=10, batch_size=512,)))
+    candidate_models.append(("FTTransformer", FTTransformerModel(input_dim=len(feature_cols), d_model=64, nhead=4, num_layers=2, dropout=0.2, epochs=30, batch_size=512,)))
+    candidate_models.append(("FTTransformer", FTTransformerModel(input_dim=len(feature_cols), d_model=64, nhead=4, num_layers=2, dropout=0.2, epochs=100, batch_size=512,)))
+    candidate_models.append(("FTTransformer", FTTransformerModel(input_dim=len(feature_cols), d_model=64, nhead=4, num_layers=2, dropout=0.2, epochs=300, batch_size=512,)))
 
     model_results = []
     for name, model in candidate_models:
