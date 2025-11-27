@@ -46,9 +46,20 @@ def main():
     train_df = dataset.train_df
     test_df = dataset.test_df
 
-    model = Model("RandomForestClassifier", RandomForestClassifier(n_estimators=1000, max_depth=10, min_samples_split=100, random_state=42, n_jobs=-1))
+    model = Model(
+        "RandomForestClassifier",
+        RandomForestClassifier(
+            n_estimators=200,
+            max_depth=10,
+            min_samples_split=100,
+            random_state=42,
+            n_jobs=-1,
+        ), 
+        dataset=dataset,
+    )
     feature_cols = model.feature_cols
-    probs = model.predict_proba(test_df[feature_cols])
+
+    probs = model.predict_proba(test_df[feature_cols])[:, 1]
     test_df['probability'] = np.clip(probs, 0.0, 1.0)
 
     y_true = test_df['label'].astype(int)
@@ -91,12 +102,12 @@ def main():
     
     # Create results dataframe and sort by increasing PnL
     results_df = pd.DataFrame(group_results)
-    results_df = results_df.sort_values('average_probability', ascending=True)
+    results_df = results_df.sort_values('total_pnl', ascending=True)
     
     print("\nGroups sorted by increasing PnL:")
     print(results_df.to_string(index=False))
 
-    print(buy_trades.head())
+    # print(buy_trades.head())
 
 
 if __name__ == "__main__":

@@ -43,13 +43,15 @@ logging.basicConfig(
 
 
 class Model:
-    def __init__(self, name, model):
+    def __init__(self, name, model, dataset=None):
         self.feature_cols = ['delta', 'time']
         self.name = name
         self.model = model
         self.filename = f'./data/models/{self.name}.pkl'
         if os.path.exists(self.filename):
             self.model = self.load()
+        else:
+            self.fit(dataset.train_df[self.feature_cols], dataset.train_df['label'])
 
     def fit(self, X, y):
         if hasattr(X, "values"):

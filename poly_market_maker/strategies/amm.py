@@ -9,7 +9,8 @@ from poly_market_maker.orderbook import OrderBook
 from poly_market_maker.utils import math_round_down
 
 SIZE = 5
-MAX_IMBALANCE = 5
+MAX_BALANCE = 50
+MAX_IMBALANCE = 25
 MAX_HEDGE_IMBALANCE = 100
 
 
@@ -89,7 +90,6 @@ class AMM:
             price = round(ask + i * self.delta, 2)
             if 0.01 <= price <= 0.99 and price >= self.up + self.spread:
                 self.sell_prices.append(price)
-
 
     def set_hedge_prices(self, bid: float, up: float):
         self.hedge_prices = []
@@ -178,7 +178,7 @@ class AMMManager:
         up = round(up, 3)
         down = 1.0 - up
         imbalance = balances[MyToken.A] - balances[MyToken.B]
-        percent = abs(imbalance) / (MAX_IMBALANCE * seconds_left / 900)
+        percent = (900. - seconds_left) / 900.0
 
         self.logger.info(
             f"get_expected_orders called with params: bid={bid}, ask={ask}, up={up}, down={down} seconds_left={seconds_left}, "
@@ -191,25 +191,19 @@ class AMMManager:
         sell_orders_a = self.amm_a.get_sell_orders(balances[MyToken.A])
         sell_orders_b = self.amm_b.get_sell_orders(balances[MyToken.B])
 
-        if balances[MyToken.A] < 50:
+        if balances[MyToken.A] + balances[MyToken.B] < MAX_BALANCE * percent:
             buy_orders_a = self.amm_a.get_buy_orders(imbalance)
-        else:
-            buy_orders_a = []
-
-        if balances[MyToken.B] < 50:
             buy_orders_b = self.amm_b.get_buy_orders(-imbalance)
         else:
+            buy_orders_a = []
             buy_orders_b = []
-
-        # buy_orders_a = self.amm_a.get_buy_orders(imbalance) if balances[MyToken.A] <= 25 else []
-        # buy_orders_b = self.amm_b.get_buy_orders(-imbalance) if balances[MyToken.B] <= 25 else []
 
         hedge_orders_a = self.amm_a.get_hedge_orders(imbalance)
         hedge_orders_b = self.amm_b.get_hedge_orders(-imbalance)
         
         print(f"percent {percent}, imbalance {imbalance}")
 
-        orders = buy_orders_a + buy_orders_b # + sell_orders_a + sell_orders_b + hedge_orders_a + hedge_orders_b
+        orders = buy_orders_a + buy_orders_b #  + sell_orders_a + sell_orders_b
     
         return orders
 
