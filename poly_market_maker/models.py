@@ -43,10 +43,11 @@ logging.basicConfig(
 
 
 class Model:
-    def __init__(self, name, model, dataset=None):
-        self.feature_cols = ['delta', 'time']
+    def __init__(self, name, model, feature_cols, dataset=None):
         self.name = name
         self.model = model
+        self.feature_cols = feature_cols
+        self.dataset = dataset
         self.filename = f'./data/models/{self.name}.pkl'
         if os.path.exists(self.filename):
             self.model = self.load()
@@ -62,12 +63,9 @@ class Model:
         self.save()
         return self
 
-    def predict(self, X):
-        if hasattr(self.model, "predict_proba"):
-            return self.model.predict_proba(X)[:, 1]
-        return self.model.predict(X)
-
     def predict_proba(self, X):
+        if hasattr(X, "values"):
+            X = X.values
         return self.model.predict_proba(X)
 
     def evaluate(self, X, y):

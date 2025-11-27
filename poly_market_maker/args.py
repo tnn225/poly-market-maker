@@ -16,8 +16,15 @@ def get_args(args) -> dict:
         "--sync-interval",
         type=int,
         required=False,
-        default=5,
+        default=10,
         help="The number of seconds in between synchronizations",
+    )
+
+    parser.add_argument(
+        "--refresh-frequency",
+        type=int,
+        default=10,
+        help="Order book refresh frequency (in seconds, default: 5)",
     )
 
     parser.add_argument(
@@ -36,12 +43,6 @@ def get_args(args) -> dict:
         help="The distance between two successive prices",
     )
 
-    parser.add_argument(
-        "--refresh-frequency",
-        type=int,
-        default=5,
-        help="Order book refresh frequency (in seconds, default: 5)",
-    )
 
     parser.add_argument(
         "--gas-strategy",

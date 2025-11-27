@@ -9,8 +9,8 @@ from poly_market_maker.orderbook import OrderBook
 from poly_market_maker.utils import math_round_down
 
 SIZE = 5
-MAX_BALANCE = 50
-MAX_IMBALANCE = 25
+MAX_BALANCE = 150
+MAX_IMBALANCE = 50
 MAX_HEDGE_IMBALANCE = 100
 
 
@@ -198,13 +198,11 @@ class AMMManager:
             buy_orders_a = []
             buy_orders_b = []
 
-        hedge_orders_a = self.amm_a.get_hedge_orders(imbalance)
-        hedge_orders_b = self.amm_b.get_hedge_orders(-imbalance)
+        # hedge_orders_a = self.amm_a.get_hedge_orders(imbalance)
+        # hedge_orders_b = self.amm_b.get_hedge_orders(-imbalance)
         
         print(f"percent {percent}, imbalance {imbalance}")
 
-        orders = buy_orders_a + buy_orders_b #  + sell_orders_a + sell_orders_b
+        orders += buy_orders_a + buy_orders_b
     
         return orders
-
-

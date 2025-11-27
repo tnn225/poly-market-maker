@@ -32,7 +32,7 @@ from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
 SPREAD = 0.01
-DAYS = 7
+DAYS = 20
 logger = logging.getLogger(__name__)
 logging.basicConfig(
     level=logging.INFO,
@@ -42,7 +42,6 @@ logging.basicConfig(
 class Dataset:
     def __init__(self):
         self._delta_percentiles = None
-        # self.feature_cols = ['delta', 'percent', 'log_return', 'time', 'seconds_left', 'bid', 'ask']
         self._read_dates()
         self._add_target_and_is_up()
         self._train_test_split()
@@ -119,10 +118,10 @@ class Dataset:
         self.df = self.df[
             (self.df['is_up'].notna())
             & (self.df['bid'].notna())
-            & (self.df['bid'] > 0)
             & (self.df['ask'].notna())
-            & (self.df['ask'] > 0)
             & (self.df['target'].notna())
+            & (self.df['bid'] > 0)
+            & (self.df['ask'] > 0)
             & (self.df['price'] > 0)
             & (self.df['target'] > 0)
         ].copy()
@@ -132,12 +131,9 @@ class Dataset:
         self.df["delta"] = price_vals - target_vals
         self.df["percent"] = (price_vals - target_vals) / target_vals
         self.df["log_return"] = np.log(price_vals / target_vals)
-        
-        
+    
         self.df['seconds_left'] = 900 - (self.df['timestamp'] - self.df['interval'])
-        self.df['time'] = self.df['seconds_left'] / 900.
-        self.df['time'] = self.df['time'].astype(float)
-
+        self.df['time'] = self.df['seconds_left'].astype(float) / 900.
         self.df = self.df.drop(columns=['interval'])
 
     def _train_test_split(self, test_ratio: float = 0.2):
@@ -150,8 +146,8 @@ class Dataset:
         self.train_df['label'] = self.train_df['is_up'].astype(int)
         self.test_df['label'] = self.test_df['is_up'].astype(int)
 
-        print(self.train_df.head())
-        print(self.test_df.head())
+        # print(self.train_df.head())
+        # print(self.test_df.head())
 
         return self.train_df, self.test_df
 
@@ -160,24 +156,23 @@ class Dataset:
             raise ValueError(f"Dataframe must contain '{probability_column}' column for evaluation.")
 
         eval_df = df.dropna(subset=[probability_column, 'bid', 'is_up']).copy()
-        eval_df['action'] = (eval_df[probability_column] - spread >= eval_df['bid']) & (eval_df['bid'] > 0)
+        eval_df['action'] = (eval_df[probability_column] - spread >= eval_df['bid'])
 
-        buy_df = eval_df[eval_df['action']].copy()
-        buy_df['revenue'] = buy_df['is_up'].astype(float)
-        buy_df['cost'] = buy_df['bid']
-        buy_df['pnl'] = buy_df['revenue'] - buy_df['cost']
+        trade_df = eval_df[eval_df['action']].copy()
+        trade_df['revenue'] = trade_df['is_up'].astype(float)
+        trade_df['cost'] = trade_df['bid']
+        trade_df['pnl'] = trade_df['revenue'] - trade_df['cost']
 
         summary = {
-            'total_rows': len(df),
-            'eligible_rows': len(eval_df),
-            'buy_trades': len(buy_df),
-            'total_revenue': buy_df['revenue'].sum(),
-            'total_cost': buy_df['cost'].sum(),
-            'total_pnl': buy_df['pnl'].sum(),
-            'avg_pnl_per_trade': buy_df['pnl'].mean() if not buy_df.empty else 0.0,
+            'num_rows': len(df),
+            'num_trades': len(trade_df),
+            'revenue': trade_df['revenue'].sum(),
+            'cost': trade_df['cost'].sum(),
+            'pnl': trade_df['pnl'].sum(),
+            'margin': trade_df['pnl'].mean(),
         }
 
-        return summary, buy_df
+        return summary, trade_df
 
     def evaluate_model_metrics(self, df: pd.DataFrame, probability_column: str = 'probability', threshold: float = 0.5, spread: float = 0.1):
         eval_df = df.dropna(subset=[probability_column, 'label']).copy()
@@ -187,7 +182,7 @@ class Dataset:
 
         pnl = float('nan')
         if {'bid', 'is_up'}.issubset(eval_df.columns):
-            actions = (probs - spread > eval_df['bid']) & (eval_df['bid'] > 0)
+            actions = (probs - spread > eval_df['bid'])
             trade_df = eval_df[actions].copy()
             trade_df['revenue'] = trade_df['is_up'].astype(float)
             trade_df['cost'] = trade_df['bid']
@@ -208,8 +203,17 @@ def main():
     train_df = dataset.train_df
     test_df = dataset.test_df
 
-    # print(train_df.head())
-    # print(test_df.head())
+    print(train_df.head())
+    print(test_df.head())
+
+    print("Train/Test set overview:")
+    print(f"  train_df shape: {train_df.shape}")
+    print(f"  test_df shape:  {test_df.shape}")
+    print(f"  train labels distribution:\n {train_df['label'].value_counts(normalize=True)} {train_df['label'].value_counts(normalize=False)}")
+    print(f"  test labels distribution:\n {test_df['label'].value_counts(normalize=True)} {test_df['label'].value_counts(normalize=False)}\n")
+
+
+    return 
 
     feature_cols = ['delta', 'percent', 'log_return', 'time', 'seconds_left', 'bid', 'ask']
 
@@ -240,56 +244,6 @@ def main():
         metrics['model'] = name
         model_results.append(metrics)
         print(datetime.now(), metrics)
-
-
-    return 
-
-    results_df = pd.DataFrame(model_results).sort_values('total_pnl', ascending=False)
-    best_model_name = results_df.iloc[0]['model']
-    test_df['probability'] = test_df[f'prob_{best_model_name}']
-
-    false_positive_actions = test_df[
-        (test_df['probability'] - SPREAD >= test_df['bid'])
-        & (test_df['bid'] > 0)
-        & (test_df['is_up'] == 0)
-    ].copy()
-    false_positive_actions['minutes_left'] = (false_positive_actions['seconds_left'] // 60).astype(int)
-    false_positive_actions = false_positive_actions[['probability', 'bid', 'delta', 'seconds_left', 'minutes_left']].sort_values('probability')
-    if not false_positive_actions.empty:
-        print("False positive actions (probability vs bid):")
-        # print(false_positive_actions.to_string(index=False))
-        bucket_counts = false_positive_actions.groupby('minutes_left').size().reset_index(name='count').sort_values('minutes_left')
-        print("False positive counts by minutes_left bucket:")
-        print(bucket_counts.to_string(index=False))
-
-        try:
-            false_positive_actions['bid_bucket'] = pd.qcut(
-                false_positive_actions['bid'],
-                q=10,
-                duplicates='drop'
-            )
-        except ValueError:
-            false_positive_actions['bid_bucket'] = pd.cut(
-                false_positive_actions['bid'],
-                bins=10,
-                include_lowest=True
-            )
-
-        bid_bucket_counts = (
-            false_positive_actions
-            .groupby('bid_bucket')
-            .size()
-            .reset_index(name='count')
-            .sort_values('bid_bucket')
-        )
-        print("False positive counts by bid bucket (10 buckets):")
-        print(bid_bucket_counts.to_string(index=False))
-    else:
-        print("No false positive actions found.")
-
-    # summary, buy_df = dataset.evaluate_strategy(test_df, spread=SPREAD, probability_column='probability')
-    # print(summary)
-    # print(buy_df.head())
 
 if __name__ == "__main__":
     main()

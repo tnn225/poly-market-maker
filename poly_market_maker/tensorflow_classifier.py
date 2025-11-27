@@ -5,31 +5,18 @@ import numpy as np
 from poly_market_maker.dataset import Dataset
 
 class TensorflowClassifier:
-    def __init__(self, filename=None):
+    def __init__(self):
         self.model = None
-        self.feature_cols = ['delta', 'percent', 'log_return', 'time', 'seconds_left', 'bid', 'ask']
-        self.label_col = 'label' 
-        self.filename = filename
-        if filename is not None and os.path.exists(filename) and filename.endswith('.keras'):
-            self.model = tf.keras.models.load_model(filename)
-        else:
-            self.model = self.train(filename=filename, batch_size=64)
 
-    def train(self, filename=None, batch_size=64):
+    def fit(self, X, y, batch_size=64):
         self.dataset = Dataset()
-
-        X = self.dataset.train_df[self.feature_cols].astype('float32').values
-        y = self.dataset.train_df[self.label_col].astype('float32').values
-
-        val_X = self.dataset.test_df[self.feature_cols].astype('float32').values
-        val_y = self.dataset.test_df[self.label_col].astype('float32').values
+        if hasattr(X, "values"):
+            X = X.values
+        if hasattr(y, "values"):
+            y = y.values
 
         self.train_dataset = tf.data.Dataset.from_tensor_slices((X, y)) \
             .shuffle(len(X)) \
-            .batch(batch_size) \
-            .prefetch(tf.data.AUTOTUNE)
-
-        self.val_dataset = tf.data.Dataset.from_tensor_slices((val_X, val_y)) \
             .batch(batch_size) \
             .prefetch(tf.data.AUTOTUNE)
 
@@ -66,26 +53,23 @@ class TensorflowClassifier:
             epochs=20,
             verbose=1
         )
-        if filename is not None:
-            self.model.save(filename, save_format='keras')
         return self.model
 
-    def predict(self, df, batch_size=64):
+    def predict_proba(self, X, batch_size=64):
         """
         Generate predictions for the test dataset.
 
         Returns a numpy array of predictions.
         """
         if self.model is None:
-            raise ValueError("Model has not been trained yet. Call train() first.")        
+            raise ValueError("Model has not been trained yet. Call fit() first.")        
         
-        X = df[self.feature_cols].astype('float32').values
         if hasattr(X, "values"):
             X = X.values
-        self.y_pred = self.model.predict(X, batch_size=batch_size).flatten()
+        self.y_pred = self.model.predict_proba(X)
         return self.y_pred
 
-    def get_prediction(self, price, target, seconds_left, bid, ask):
+    def get_probability(self, price, target, seconds_left, bid, ask):
         """Generate a single probability prediction for the provided snapshot."""
         if self.model is None:
             raise ValueError("Model has not been trained yet. Call train() first.")
