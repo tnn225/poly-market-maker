@@ -16,8 +16,10 @@ from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 
 from poly_market_maker.dataset import Dataset
+from poly_market_maker.tensorflow_classifier import TensorflowClassifier
 
 import pickle
+import tensorflow as tf
 
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import (
@@ -48,7 +50,8 @@ class Model:
         self.model = model
         self.feature_cols = feature_cols
         self.dataset = dataset
-        self.filename = f'./data/models/{self.name}.pkl'
+        self.is_tensorflow = isinstance(self.model, TensorflowClassifier)
+        self.filename = f'./data/models/{self.name}.keras' if self.is_tensorflow else f'./data/models/{self.name}.pkl'
         if os.path.exists(self.filename):
             self.model = self.load()
         else:
@@ -72,11 +75,30 @@ class Model:
         return self.model.evaluate(X, y)
 
     def save(self):
-        pickle.dump(self.model, open(self.filename, 'wb'))
+        # Check if this is a TensorFlow model (TensorflowClassifier wrapper)
+        if isinstance(self.model, TensorflowClassifier):
+            # Save the underlying TensorFlow model
+            if self.model.model is not None:
+                self.model.model.save(self.filename)
+        else:
+            pickle.dump(self.model, open(self.filename, 'wb'))
 
     def load(self):
+        # Check if this is a TensorFlow model based on file extension or instance type
         if os.path.exists(self.filename):
-            self.model = pickle.load(open(self.filename, 'rb'))
+            if self.is_tensorflow or self.filename.endswith('.keras'):
+                # Load TensorFlow model into TensorflowClassifier wrapper
+                if isinstance(self.model, TensorflowClassifier):
+                    self.model.model = tf.keras.models.load_model(self.filename)
+                else:
+                    # Reconstruct TensorflowClassifier if needed
+                    loaded_classifier = TensorflowClassifier()
+                    loaded_classifier.model = tf.keras.models.load_model(self.filename)
+                    self.model = loaded_classifier
+            else:
+                self.model = pickle.load(open(self.filename, 'rb'))
+        else:
+            raise ValueError(f"Model file not found: {self.filename}")
         return self.model
 
     def get_probability(self, price, target, seconds_left, bid, ask):
@@ -109,8 +131,10 @@ def main():
 
     N_ESTIMATORS = 200
     MAX_DEPTH = 6
+    feature_cols=['delta', 'percent', 'log_return', 'time', 'seconds_left', 'bid', 'ask']
     models = [
-        Model("RandomForestClassifier", RandomForestClassifier(n_estimators=N_ESTIMATORS, max_depth=MAX_DEPTH, min_samples_split=100, random_state=42, n_jobs=-1)),
+        Model("RandomForestClassifier", RandomForestClassifier(n_estimators=N_ESTIMATORS, max_depth=MAX_DEPTH, min_samples_split=100, random_state=42, n_jobs=-1), feature_cols=feature_cols, dataset=dataset),
+        Model("TensorflowClassifier", TensorflowClassifier(), feature_cols=feature_cols, dataset=dataset),
         # Model("LogisticRegression", LogisticRegression(penalty='l2', C=1.0, solver='lbfgs', max_iter=10000)),
         # Model("LGBMClassifier", LGBMClassifier(n_estimators=N_ESTIMATORS, max_depth=-1, learning_rate=0.001, random_state=42,)),
         # Model("GradientBoostingClassifier", GradientBoostingClassifier(n_estimators=N_ESTIMATORS, learning_rate=0.01, max_depth=MAX_DEPTH, random_state=42)),
@@ -119,7 +143,9 @@ def main():
     for model in models:
         feature_cols = model.feature_cols
 
-        if os.path.exists(model.filename):
+        # Check if model exists (either .pkl file or TensorFlow model directory)
+        model_dir = model.filename.replace('.pkl', '')
+        if os.path.exists(model.filename) or os.path.exists(model_dir):
             model.model = model.load()
         else:
             model.fit(train_df[feature_cols], train_df['label'])
