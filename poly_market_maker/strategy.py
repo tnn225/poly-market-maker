@@ -15,6 +15,9 @@ from poly_market_maker.strategies.base_strategy import BaseStrategy
 from poly_market_maker.strategies.amm_strategy import AMMStrategy
 from poly_market_maker.strategies.bands_strategy import BandsStrategy
 
+from poly_market_maker.dataset import Dataset
+from poly_market_maker.bucket_classifier import BucketClassifier
+
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 
@@ -54,8 +57,10 @@ class StrategyManager:
         self.price_engine = price_engine
         self.order_book_engine = order_book_engine
         self.prediction_engine = prediction_engine
-        self.model = Model("RandomForestClassifier", RandomForestClassifier(n_estimators=1000, max_depth=10, min_samples_split=100, random_state=42, n_jobs=-1))
-        self.model.load()
+        dataset = Dataset()
+        feature_cols = ['delta', 'percent', 'log_return', 'time', 'seconds_left', 'bid', 'ask']
+        # self.model = Model(f"RandomForestClassifier_2700_32_7", RandomForestClassifier(n_estimators=2700, max_depth=32, min_samples_split=57, min_samples_leaf=28, max_features='log2', bootstrap=False, class_weight='balanced_subsample', random_state=42, n_jobs=-1), feature_cols=['delta', 'percent', 'log_return', 'time', 'seconds_left', 'bid', 'ask'], dataset=dataset)
+        self.model = Model(f"BucketClassifier", BucketClassifier(), feature_cols=['delta', 'percent', 'log_return', 'time', 'seconds_left', 'bid', 'ask'], dataset=dataset)
 
         match Strategy(strategy):
             case Strategy.AMM:

@@ -58,17 +58,17 @@ class Model:
             self.fit(dataset.train_df[self.feature_cols], dataset.train_df['label'])
 
     def fit(self, X, y):
-        if hasattr(X, "values"):
-            X = X.values
-        if hasattr(y, "values"):
-            y = y.values
+        # if hasattr(X, "values"):
+        #     X = X.values
+        # if hasattr(y, "values"):
+        #    y = y.values
         self.model.fit(X, y)
         self.save()
         return self
 
     def predict_proba(self, X):
-        if hasattr(X, "values"):
-            X = X.values
+        #if hasattr(X, "values"):
+        #    X = X.values
         return self.model.predict_proba(X)
 
     def evaluate(self, X, y):
@@ -129,12 +129,25 @@ def main():
     train_df = dataset.train_df
     test_df = dataset.test_df
 
-    N_ESTIMATORS = 200
-    MAX_DEPTH = 6
-    feature_cols=['delta', 'percent', 'log_return', 'time', 'seconds_left', 'bid', 'ask']
+    # feature_cols=['delta', 'percent', 'log_return', 'time', 'seconds_left', 'bid', 'ask']
+    feature_cols = ['delta', 'percent', 'log_return', 'time', 'seconds_left', 'bid', 'ask']
+
+    models = []
+    N_ESTIMATORS = 1000
+    MAX_DEPTH = 30
+ 
+    n_estimators = 100
+    while n_estimators < N_ESTIMATORS:
+        max_depth = 1
+        while max_depth < MAX_DEPTH:
+            models.append(Model("RandomForestClassifier", RandomForestClassifier(n_estimators=n_estimators, max_depth=max_depth, min_samples_split=100, random_state=42, n_jobs=-1), feature_cols=feature_cols, dataset=dataset))
+            max_depth *= 3
+        n_estimators *= 3
+
+    models.append(Model("RandomForestClassifier", RandomForestClassifier(n_estimators=N_ESTIMATORS, max_depth=MAX_DEPTH, min_samples_split=100, random_state=42, n_jobs=-1), feature_cols=feature_cols, dataset=dataset))
     models = [
         Model("RandomForestClassifier", RandomForestClassifier(n_estimators=N_ESTIMATORS, max_depth=MAX_DEPTH, min_samples_split=100, random_state=42, n_jobs=-1), feature_cols=feature_cols, dataset=dataset),
-        Model("TensorflowClassifier", TensorflowClassifier(), feature_cols=feature_cols, dataset=dataset),
+        # Model("TensorflowClassifier", TensorflowClassifier(), feature_cols=feature_cols, dataset=dataset),
         # Model("LogisticRegression", LogisticRegression(penalty='l2', C=1.0, solver='lbfgs', max_iter=10000)),
         # Model("LGBMClassifier", LGBMClassifier(n_estimators=N_ESTIMATORS, max_depth=-1, learning_rate=0.001, random_state=42,)),
         # Model("GradientBoostingClassifier", GradientBoostingClassifier(n_estimators=N_ESTIMATORS, learning_rate=0.01, max_depth=MAX_DEPTH, random_state=42)),
@@ -160,7 +173,7 @@ def main():
         metrics['model'] = model.name
         print(datetime.now(), metrics)
 
-    model = models[0]
+    model = models[1]
     print(model.get_probability(87684.42122177457, 87498.58994751809, 60, 0.53, 0.55))
     print(model.get_probability(87398.58994751809, 87584.42122177457, 60, 0.45, 0.47))
 

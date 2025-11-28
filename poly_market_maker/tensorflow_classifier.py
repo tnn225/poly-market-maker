@@ -12,6 +12,7 @@ class TensorflowClassifier:
         self.batch_size = 64
         self.epochs = 20
         self.learning_rate = 1e-3
+
     def fit(self, X, y):
         # Convert to numpy arrays if needed (e.g., from pandas DataFrame)
         if hasattr(X, "values"):
@@ -20,7 +21,7 @@ class TensorflowClassifier:
         if hasattr(y, "values"):
             y = y.values
         
-        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.1, random_state=42)
 
         self.train_dataset = tf.data.Dataset.from_tensor_slices((X_train, y_train)) \
             .shuffle(len(X_train)) \

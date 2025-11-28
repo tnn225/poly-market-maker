@@ -31,6 +31,7 @@ from sklearn.metrics import (
 from poly_market_maker.dataset import Dataset
 from poly_market_maker.models import Model
 from poly_market_maker.tensorflow_classifier import TensorflowClassifier
+from poly_market_maker.bucket_classifier import BucketClassifier
 
 SPREAD = 0.05
 logger = logging.getLogger(__name__)
@@ -49,7 +50,7 @@ def evaluate_model(model, test_df, show_results=True):
     test_df['y_pred_proba'] = y_pred_proba
 
     # Bucket price_delta into 10 bins
-    test_df['delta_bucket'] = pd.qcut(test_df['delta'], 5, duplicates='drop')
+    test_df['delta_bucket'] = pd.qcut(test_df['delta'], 10, duplicates='drop')
     
     # Bucket seconds_left into 5 bins
     test_df['time_bucket'] = pd.qcut(test_df['time'], 5, duplicates='drop')
@@ -67,12 +68,11 @@ def evaluate_model(model, test_df, show_results=True):
         group_results.append({
             'time_bucket': t_bucket,
             'delta_bucket': d_bucket,
-            
-
+            'opportunity': group['is_up'].sum() - group['bid'].sum(),
+            'pnl': buy_trades['pnl'].sum(),  
             'average_is_up': group['is_up'].mean(),
             'average_probability': group['probability'].mean(),
             'average_bid': group['bid'].mean(),
-            'pnl': buy_trades['pnl'].sum(),  
             'buy_trades': len(buy_trades),
             'num_rows': len(group),
         })
@@ -96,19 +96,19 @@ def main():
     train_df = dataset.train_df
     test_df = dataset.test_df
 
-    feature_cols = ['delta', 'time']
+    feature_cols = ['delta', 'percent', 'log_return', 'time', 'seconds_left', 'bid', 'ask']
+    # feature_cols = ['log_return', 'time']
     models = [
-        Model("RandomForestClassifier", RandomForestClassifier(n_estimators=300, max_depth=10, min_samples_split=100, random_state=42, n_jobs=-1), feature_cols, dataset=dataset),
-        Model("LogisticRegression", LogisticRegression(max_iter=300, C=0.5, solver='lbfgs'), feature_cols, dataset=dataset),
-        Model("LGBMClassifier", LGBMClassifier(n_estimators=300, max_depth=-1, learning_rate=0.01, random_state=42,), feature_cols, dataset=dataset),
-        Model("GradientBoostingClassifier", GradientBoostingClassifier(n_estimators=300, learning_rate=0.01, max_depth=3, random_state=42), feature_cols, dataset=dataset),
-        Model("TensorflowClassifier", TensorflowClassifier(filename='./data/models/tensorflow_classifier.keras'), feature_cols, dataset=dataset),
+        # Model("RandomForestClassifier", RandomForestClassifier(n_estimators=300, max_depth=10, min_samples_split=100, random_state=42, n_jobs=-1), feature_cols=feature_cols, dataset=dataset),
+        # Model("LogisticRegression", LogisticRegression(max_iter=300, C=0.5, solver='lbfgs'), feature_cols=feature_cols, dataset=dataset),
+        # Model("LGBMClassifier", LGBMClassifier(n_estimators=300, max_depth=-1, learning_rate=0.001, random_state=42,), feature_cols=feature_cols, dataset=dataset),
+        # Model("GradientBoostingClassifier", GradientBoostingClassifier(n_estimators=300, learning_rate=0.001, max_depth=3, random_state=42), feature_cols=feature_cols, dataset=dataset),
+        Model("BucketClassifier", BucketClassifier(), feature_cols=feature_cols, dataset=dataset),
     ]
 
     for model in models:
-        evaluate_model(model, test_df, show_results=False)
-
-
+        evaluate_model(model, train_df, show_results=True)
+        # evaluate_model(model, test_df, show_results=True)
 
 if __name__ == "__main__":
     main()

@@ -39,6 +39,8 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s - %(message)s"
 )
 
+
+
 class Dataset:
     def __init__(self):
         self._delta_percentiles = None
@@ -195,6 +197,8 @@ class Dataset:
             'f1_score': f1_score(y_true, preds, zero_division=0),
             'roc_auc': roc_auc_score(y_true, probs) if len(np.unique(y_true)) > 1 else float('nan'),
             'total_pnl': pnl,
+            'num_trades': len(trade_df),
+            'num_rows': len(eval_df),
         }
 
 
