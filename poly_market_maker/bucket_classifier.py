@@ -3,6 +3,11 @@ import pandas as pd
 import numpy as np
 from poly_market_maker.dataset import Dataset
 
+DELTA_BUCKETS = 20
+SECONDS_LEFT_BUCKET_SIZE = 60
+SECONDS_LEFT_BUCKETS = int(900 / SECONDS_LEFT_BUCKET_SIZE)  # every 15 seconds = 60 bins
+MAX_SECONDS_LEFT_BIN = SECONDS_LEFT_BUCKETS 
+
 class BucketClassifier:
     def __init__(self):
         self.table_index = {}
@@ -17,42 +22,25 @@ class BucketClassifier:
         # Bin delta into 100 percentile bins using fixed percentile thresholds
         delta_values = df['delta'].dropna()
         if len(delta_values) > 0:
-            delta_percentiles = np.percentile(delta_values, np.linspace(0, 100, 101))
+            delta_percentiles = np.percentile(delta_values, np.linspace(0, 100, DELTA_BUCKETS))
             delta_percentiles = pd.Series(delta_percentiles).drop_duplicates().values
             if len(delta_percentiles) > 1:
                 delta_percentiles[0] = delta_values.min() - 1e-10
                 delta_percentiles[-1] = delta_values.max() + 1e-10
                 # Sort percentiles for faster binary search lookup
                 self._delta_percentiles = np.sort(delta_percentiles)
-                
-                try:
-                    df['delta_bin'] = pd.cut(
-                        df['delta'], 
-                        bins=delta_percentiles,
-                        labels=False,
-                        include_lowest=True
-                    )
-                except (ValueError, IndexError):
-                    unique_deltas = delta_values.nunique()
-                    n_bins = min(100, unique_deltas)
-                    if n_bins > 1:
-                        df['delta_bin'] = pd.qcut(
-                            df['delta'], 
-                            q=n_bins, 
-                            labels=False, 
-                            duplicates='drop'
-                        )
-                    else:
-                        df['delta_bin'] = 0
-            else:
-                df['delta_bin'] = 0
-        else:
-            df['delta_bin'] = 0
-        
-        # Bin seconds_left into 10 bins
+                df['delta_bin'] = pd.cut(
+                    df['delta'], 
+                    bins=delta_percentiles,
+                    labels=False,
+                    include_lowest=True
+                )
+
+        # Bin seconds_left into fixed 15-second buckets (0-15, 15-30, ..., 885-900)
+        seconds_left_bins = np.arange(0, 901, SECONDS_LEFT_BUCKET_SIZE)
         df['seconds_left_bin'] = pd.cut(
             df['seconds_left'],
-            bins=15,
+            bins=seconds_left_bins,
             labels=False,
             include_lowest=True
         )
@@ -95,12 +83,12 @@ class BucketClassifier:
         return idx
 
     def get_seconds_left_bin(self, seconds_left: float) -> int:
-        """Get seconds_left bin number (0-9)"""
+        """Get seconds_left bin number (0 to SECONDS_LEFT_BUCKETS-1)"""
         if seconds_left < 0:
             return 0
         if seconds_left >= 900:
-            return 15
-        return int(seconds_left // 60)
+            return MAX_SECONDS_LEFT_BIN - 1
+        return int(seconds_left // SECONDS_LEFT_BUCKET_SIZE)
 
     def predict_proba(self, X, batch_size=64):
         """
@@ -146,9 +134,10 @@ class BucketClassifier:
         
         # Use indexed lookup for O(1) access
         key = (seconds_left_bin, delta_bin)
-        prob = self.table_index.get(key, 0.5)  # Default to 0.5 if not found
-        
-        return float(np.clip(prob, 0.0, 1.0))
+        probability = self.table_index.get(key, 0.5)  # Default to 0.5 if not found
+        print(f"price: {price}, delta: {price - target}, seconds_left: {seconds_left}, bid: {bid}, ask: {ask}, probability: {probability}")
+
+        return float(np.clip(probability, 0.0, 1.0))
 
 def main():
     dataset = Dataset()
@@ -163,8 +152,10 @@ def main():
     print(f"First 5 predictions: {prob[:5]}")
     
     # Test single prediction
-    test_prob = model.get_probability(87576.878879, 87628.002972, 686, 0.4, 0.41)
+    test_prob = model.get_probability(87576.878879, 87628.002972, 60, 0.4, 0.41)
     print(f"Single prediction: {test_prob}")
 
 if __name__ == "__main__":
     main()
+
+    

@@ -14,6 +14,7 @@ from lightgbm import LGBMClassifier
 from scipy.stats import norm
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
+from sklearn.calibration import CalibratedClassifierCV
 
 from poly_market_maker.dataset import Dataset
 from poly_market_maker.tensorflow_classifier import TensorflowClassifier
@@ -44,22 +45,20 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s - %(message)s"
 )
 
-
 class Model:
-    def __init__(self, name, model, feature_cols, dataset=None):
+    def __init__(self, name, model=None, feature_cols=None, dataset=None):
+        print(f"Initializing model: {name}")
         self.name = name
         self.model = model
         self.feature_cols = feature_cols
-        self.dataset = dataset
-        self.is_tensorflow = isinstance(self.model, TensorflowClassifier)
-        self.filename = f'./data/models/{self.name}.keras' if self.is_tensorflow else f'./data/models/{self.name}.pkl'
+        self.filename = f'./data/models/{self.name}.pkl'
         if os.path.exists(self.filename):
-            print(f"Model file exists: {self.filename} {self.model}")
-            self.model = self.load()
+            self.load()
         else:
-            self.fit(dataset.train_df[self.feature_cols], dataset.train_df['label'])
+            self.fit(dataset.train_df[feature_cols], dataset.train_df['label'])
 
     def fit(self, X, y):
+        print(f"Fitting model: {self.name}")
         # if hasattr(X, "values"):
         #     X = X.values
         # if hasattr(y, "values"):
@@ -69,40 +68,30 @@ class Model:
         return self
 
     def predict_proba(self, X):
-        #if hasattr(X, "values"):
-        #    X = X.values
+        # if hasattr(X, "values"):
+        #     X = X.values
         return self.model.predict_proba(X)
 
     def evaluate(self, X, y):
         return self.model.evaluate(X, y)
 
     def save(self):
-        # Check if this is a TensorFlow model (TensorflowClassifier wrapper)
-        if isinstance(self.model, TensorflowClassifier):
-            # Save the underlying TensorFlow model
-            if self.model.model is not None:
-                self.model.model.save(self.filename)
-        else:
-            pickle.dump(self.model, open(self.filename, 'wb'))
+        """Save both model and feature_cols"""
+        print(f"Model saved to: {self.filename}")        
+        # Save as a dictionary containing both model and feature_cols
+        data_to_save = {
+            'model': self.model,
+            'feature_cols': self.feature_cols
+        }
+        pickle.dump(data_to_save, open(self.filename, 'wb'))
 
     def load(self):
+        """Load both model and feature_cols"""
         print(f"Loading model: {self.filename}")
-        # Check if this is a TensorFlow model based on file extension or instance type
         if os.path.exists(self.filename):
-            if self.is_tensorflow or self.filename.endswith('.keras'):
-                # Load TensorFlow model into TensorflowClassifier wrapper
-                if isinstance(self.model, TensorflowClassifier):
-                    self.model.model = tf.keras.models.load_model(self.filename)
-                else:
-                    # Reconstruct TensorflowClassifier if needed
-                    loaded_classifier = TensorflowClassifier()
-                    loaded_classifier.model = tf.keras.models.load_model(self.filename)
-                    self.model = loaded_classifier
-            else:
-                self.model = pickle.load(open(self.filename, 'rb'))
-        else:
-            raise ValueError(f"Model file not found: {self.filename}")
-        return self.model
+            loaded_data = pickle.load(open(self.filename, 'rb'))
+            self.model = loaded_data.get('model')
+            self.feature_cols = loaded_data.get('feature_cols')
 
     def get_probability(self, price, target, seconds_left, bid, ask):
         """Generate a single probability prediction for the provided snapshot."""
@@ -132,26 +121,35 @@ class Model:
         #     return row['bid']
 
         probability = float(np.clip(probability, 0.0, 1.0))
-        if row['delta'] >= 0:
-            probability = max(0.5, probability)
-        if row['delta'] <= 0:
-            probability = min(0.5, probability)
+        if row['delta'] > 0 and probability < 0.5:
+            probability = bid 
+        if row['delta'] < 0 and probability > 0.5:
+            probability = bid
         return probability
+
+def get_calibrated_model(random_forest_params):
+    model = RandomForestClassifier(**random_forest_params)
+    calibrated_model = CalibratedClassifierCV(model, method='isotonic', cv=5)
+    return calibrated_model
 
 def main():
     dataset = Dataset()
     train_df = dataset.train_df
     test_df = dataset.test_df
+    feature_cols=['delta', 'percent', 'log_return', 'time', 'seconds_left', 'bid', 'ask']
 
-    # feature_cols=['delta', 'percent', 'log_return', 'time', 'seconds_left', 'bid', 'ask']
-    feature_cols = ['delta', 'percent', 'log_return', 'time', 'seconds_left', 'bid', 'ask']
+    random_forest_params = {'n_estimators': 2000, 'max_depth': 30, 'min_samples_split': 100, 'min_samples_leaf': 100, 'max_features': 'sqrt', 'bootstrap': False, 'class_weight': 'balanced'}
+    model = Model(f"RandomForestClassifier_features_{len(feature_cols)}_{random_forest_params['n_estimators']}_{random_forest_params['max_depth']}_{random_forest_params['min_samples_split']}_{random_forest_params['min_samples_leaf']}_{random_forest_params['max_features']}_{random_forest_params['bootstrap']}_{random_forest_params['class_weight']}", RandomForestClassifier(**random_forest_params), feature_cols=feature_cols, dataset=dataset)
+    # model = Model(f"CalibratedClassifierCV_features_{len(feature_cols)}_{random_forest_params['n_estimators']}_{random_forest_params['max_depth']}_{random_forest_params['min_samples_split']}_{random_forest_params['min_samples_leaf']}_{random_forest_params['max_features']}_{random_forest_params['bootstrap']}_{random_forest_params['class_weight']}", get_calibrated_model(random_forest_params), feature_cols=feature_cols, dataset=dataset)
 
-    models = []
- 
-    models.append(Model("BucketClassifier", BucketClassifier(), feature_cols=feature_cols, dataset=dataset))
-    model = models[0]
+    prob = model.predict_proba(test_df[feature_cols])
+    test_df['probability'] = prob[:, 1]
+    ret = dataset.evaluate_model_metrics(test_df, probability_column='probability', spread=0.05)
+    print(ret)
+
     print(model.get_probability(87684.42122177457, 87498.58994751809, 60, 0.53, 0.55))
     print(model.get_probability(87398.58994751809, 87584.42122177457, 60, 0.45, 0.47))
 
 if __name__ == "__main__":
     main()
+

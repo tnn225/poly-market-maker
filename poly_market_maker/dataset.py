@@ -15,14 +15,9 @@ from scipy.stats import norm
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 
-
-
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import (
-    accuracy_score,
-    precision_score,
-    recall_score,
-    f1_score,
+    confusion_matrix,
     roc_auc_score,
 )
 
@@ -39,14 +34,24 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s - %(message)s"
 )
 
-
-
 class Dataset:
-    def __init__(self, star):
+    def __init__(self):
         self._delta_percentiles = None
         self._read_dates()
         self._add_target_and_is_up()
         self._train_test_split()
+
+        self.show()
+
+    def show(self):
+        print(self.train_df.head())
+        print(self.test_df.head())
+
+        print("Train/Test set overview:")
+        print(f"  train_df shape: {self.train_df.shape}")
+        print(f"  test_df shape:  {self.test_df.shape}")
+        print(f"  train labels distribution:\n {self.train_df['label'].value_counts(normalize=True)} {self.train_df['label'].value_counts(normalize=False)}")
+        print(f"  test labels distribution:\n {self.test_df['label'].value_counts(normalize=True)} {self.test_df['label'].value_counts(normalize=False)}\n")
 
     def _read_dates(self):
         today = datetime.now()
@@ -201,29 +206,59 @@ class Dataset:
 
         return summary, trade_df
 
-    def evaluate_model_metrics(self, df: pd.DataFrame, probability_column: str = 'probability', threshold: float = 0.5, spread: float = 0.1):
+    def evaluate_model_metrics(self, df: pd.DataFrame, probability_column: str = 'probability', spread: float = 0.05):
         eval_df = df.dropna(subset=[probability_column, 'label']).copy()
         y_true = eval_df['label'].astype(int)
         probs = eval_df[probability_column].astype(float)
-        preds = (probs >= threshold).astype(int)
+        y_pred = (probs - spread > eval_df['bid']).astype(int)
+
+        # Calculate confusion matrix
+        cm = confusion_matrix(y_true, y_pred)
+        # Confusion matrix format: [[TN, FP], [FN, TP]]
+        # Handle different matrix sizes
+        if cm.shape == (2, 2):
+            TN, FP, FN, TP = cm.ravel()
+        elif cm.shape == (1, 1):
+            # Only one class present in predictions
+            if y_pred[0] == 0:
+                TN, FP, FN, TP = cm[0, 0], 0, 0, 0
+            else:
+                TN, FP, FN, TP = 0, 0, 0, cm[0, 0]
+        else:
+            # Fallback: try to extract values safely
+            TN = cm[0, 0] if cm.shape[0] >= 1 and cm.shape[1] >= 1 else 0
+            FP = cm[0, 1] if cm.shape[0] >= 1 and cm.shape[1] >= 2 else 0
+            FN = cm[1, 0] if cm.shape[0] >= 2 and cm.shape[1] >= 1 else 0
+            TP = cm[1, 1] if cm.shape[0] >= 2 and cm.shape[1] >= 2 else 0
+        
+        # Calculate metrics from confusion matrix
+        total = TN + FP + FN + TP
+        accuracy = (TN + TP) / total if total > 0 else 0.0
+        precision = TP / (TP + FP) if (TP + FP) > 0 else 0.0
+        recall = TP / (TP + FN) if (TP + FN) > 0 else 0.0
+        f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
 
         pnl = float('nan')
+        num_trades = 0
         if {'bid', 'is_up'}.issubset(eval_df.columns):
             actions = (probs - spread > eval_df['bid'])
             trade_df = eval_df[actions].copy()
-            trade_df['revenue'] = trade_df['is_up'].astype(float)
-            trade_df['cost'] = trade_df['bid']
-            pnl = float((trade_df['revenue'] - trade_df['cost']).sum())
+            if len(trade_df) > 0:
+                trade_df['revenue'] = trade_df['is_up'].astype(float)
+                trade_df['cost'] = trade_df['bid']
+                pnl = float((trade_df['revenue'] - trade_df['cost']).sum())
+                num_trades = len(trade_df)
 
         return {
-            'accuracy': accuracy_score(y_true, preds),
-            'precision': precision_score(y_true, preds, zero_division=0),
-            'recall': recall_score(y_true, preds, zero_division=0),
-            'f1_score': f1_score(y_true, preds, zero_division=0),
+            'accuracy': accuracy,
+            'precision': precision,
+            'recall': recall,
+            'f1_score': f1,
             'roc_auc': roc_auc_score(y_true, probs) if len(np.unique(y_true)) > 1 else float('nan'),
             'total_pnl': pnl,
-            'num_trades': len(trade_df),
+            'num_trades': num_trades,
             'num_rows': len(eval_df),
+            'confusion_matrix': cm.tolist(),
         }
 
 
@@ -231,15 +266,7 @@ def main():
     dataset = Dataset()
     train_df = dataset.train_df
     test_df = dataset.test_df
-
-    print(train_df.head())
-    print(test_df.head())
-
-    print("Train/Test set overview:")
-    print(f"  train_df shape: {train_df.shape}")
-    print(f"  test_df shape:  {test_df.shape}")
-    print(f"  train labels distribution:\n {train_df['label'].value_counts(normalize=True)} {train_df['label'].value_counts(normalize=False)}")
-    print(f"  test labels distribution:\n {test_df['label'].value_counts(normalize=True)} {test_df['label'].value_counts(normalize=False)}\n")
+    dataset.show()
 
 
     return 
