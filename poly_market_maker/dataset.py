@@ -32,7 +32,7 @@ from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
 SPREAD = 0.01
-DAYS = 20
+DAYS = 30
 logger = logging.getLogger(__name__)
 logging.basicConfig(
     level=logging.INFO,
@@ -42,7 +42,7 @@ logging.basicConfig(
 
 
 class Dataset:
-    def __init__(self):
+    def __init__(self, star):
         self._delta_percentiles = None
         self._read_dates()
         self._add_target_and_is_up()
@@ -133,10 +133,34 @@ class Dataset:
         self.df["delta"] = price_vals - target_vals
         self.df["percent"] = (price_vals - target_vals) / target_vals
         self.df["log_return"] = np.log(price_vals / target_vals)
+
+
+        # self.df = self.df[
+        #     (self.df['delta'] > -150)
+        #     & (self.df['delta'] < 150)
+        # ].copy()
     
         self.df['seconds_left'] = 900 - (self.df['timestamp'] - self.df['interval'])
         self.df['time'] = self.df['seconds_left'].astype(float) / 900.
-        self.df = self.df.drop(columns=['interval'])
+                
+        # Sort by timestamp to ensure proper rolling window calculation
+        self.df = self.df.sort_values('timestamp').reset_index(drop=True)
+        
+        # Compute rolling sigma of log_return with window 900
+        self.df['sigma'] = self.df['log_return'].rolling(window=60, min_periods=1).std()
+        
+        # Estimate z_score from log_return, sigma, and seconds_left
+        # z_score = log_return / (sigma * sqrt(seconds_left / 900))
+        # This scales the volatility by the time remaining
+        time_factor = np.sqrt(self.df['seconds_left'] / 60.0)
+        # Avoid division by zero
+        sigma_scaled = self.df['sigma'].replace(0, np.nan)
+        self.df['z_score'] = self.df['log_return'] / (sigma_scaled * time_factor)
+        # Fill NaN values (where sigma was 0) with 0
+        self.df['z_score'] = self.df['z_score'].fillna(0)
+        
+        # Use norm.cdf to get probability estimates
+        self.df["prob_est"] = norm.cdf(self.df["z_score"])
 
     def _train_test_split(self, test_ratio: float = 0.2):
         df_sorted = self.df.sort_values('timestamp').reset_index(drop=True)
@@ -145,6 +169,7 @@ class Dataset:
         self.train_df = df_sorted.iloc[:split_idx].copy()
         self.test_df = df_sorted.iloc[split_idx:].copy()
 
+        self.df['label'] = self.df['is_up'].astype(int)
         self.train_df['label'] = self.train_df['is_up'].astype(int)
         self.test_df['label'] = self.test_df['is_up'].astype(int)
 
@@ -218,36 +243,5 @@ def main():
 
 
     return 
-
-    feature_cols = ['delta', 'percent', 'log_return', 'time', 'seconds_left', 'bid', 'ask']
-
-    # feature_cols = ['delta', 'log_return', 'time', 'seconds_left',]
-
-    candidate_models = []
-
-    candidate_models.append(("RandomForestClassifier", RandomForestClassifier(n_estimators=1000, max_depth=10, min_samples_split=100, random_state=42, n_jobs=-1)))
-    # candidate_models.append(("LGBMClassifier", LGBMClassifier(n_estimators=300, max_depth=-1, learning_rate=0.01, random_state=42,)))
-    # candidate_models.append(("GradientBoostingClassifier", GradientBoostingClassifier(n_estimators=300, learning_rate=0.01, max_depth=3, random_state=42)))
-    # candidate_models.append(("LogisticRegression", LogisticRegression(max_iter=300, C=0.5, solver='lbfgs')))
-    # candidate_models.append(("MLPClassifier", MLPClassifier(hidden_layer_sizes=(64, 32, 16), activation='relu', solver='adam', learning_rate_init=0.01, max_iter=10000, random_state=42)))
-    # candidate_models.append(("FTTransformer", FTTransformerModel(input_dim=len(feature_cols), d_model=64, nhead=4, num_layers=2, dropout=0.2, epochs=10, batch_size=512,)))
-    # candidate_models.append(("FTTransformer", FTTransformerModel(input_dim=len(feature_cols), d_model=64, nhead=4, num_layers=2, dropout=0.2, epochs=30, batch_size=512,)))
-    # candidate_models.append(("FTTransformer", FTTransformerModel(input_dim=len(feature_cols), d_model=64, nhead=4, num_layers=2, dropout=0.2, epochs=100, batch_size=512,)))
-    # candidate_models.append(("FTTransformer", FTTransformerModel(input_dim=len(feature_cols), d_model=64, nhead=4, num_layers=2, dropout=0.2, epochs=300, batch_size=512,)))
-
-    model_results = []
-    for name, model in candidate_models:
-        model.fit(train_df[feature_cols], train_df['label'])
-        if hasattr(model, "predict_proba"):
-            probs = model.predict_proba(test_df[feature_cols])[:, 1]
-        else:
-            probs = model.predict(test_df[feature_cols])
-            probs = np.clip(probs, 0.0, 1.0)
-        test_df[f'prob_{name}'] = probs
-        metrics = dataset.evaluate_model_metrics(test_df, probability_column=f'prob_{name}', spread=SPREAD)
-        metrics['model'] = name
-        model_results.append(metrics)
-        print(datetime.now(), metrics)
-
 if __name__ == "__main__":
     main()

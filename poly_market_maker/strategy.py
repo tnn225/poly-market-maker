@@ -57,10 +57,10 @@ class StrategyManager:
         self.price_engine = price_engine
         self.order_book_engine = order_book_engine
         self.prediction_engine = prediction_engine
-        dataset = Dataset()
+        # dataset = Dataset()
         feature_cols = ['delta', 'percent', 'log_return', 'time', 'seconds_left', 'bid', 'ask']
-        # self.model = Model(f"RandomForestClassifier_2700_32_7", RandomForestClassifier(n_estimators=2700, max_depth=32, min_samples_split=57, min_samples_leaf=28, max_features='log2', bootstrap=False, class_weight='balanced_subsample', random_state=42, n_jobs=-1), feature_cols=['delta', 'percent', 'log_return', 'time', 'seconds_left', 'bid', 'ask'], dataset=dataset)
-        self.model = Model(f"BucketClassifier", BucketClassifier(), feature_cols=['delta', 'percent', 'log_return', 'time', 'seconds_left', 'bid', 'ask'], dataset=dataset)
+        self.model = Model(f"RandomForestClassifier_1448_36_130_135_log2_False_balanced_subsample", RandomForestClassifier(n_estimators=253, max_depth=40, min_samples_split=54, min_samples_leaf=33, max_features=0.5, bootstrap=False, class_weight='balanced', random_state=42, n_jobs=-1), feature_cols=feature_cols)
+        # self.model = Model(f"BucketClassifier", BucketClassifier(), feature_cols=feature_cols, dataset=dataset)
 
         match Strategy(strategy):
             case Strategy.AMM:

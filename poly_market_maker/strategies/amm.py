@@ -11,7 +11,7 @@ from poly_market_maker.utils import math_round_down
 SIZE = 5
 MAX_BALANCE = 150
 MAX_IMBALANCE = 50
-MAX_HEDGE_IMBALANCE = 100
+MAX_HEDGE_IMBALANCE = 50
 
 
 class OrderType:        
@@ -95,7 +95,7 @@ class AMM:
         self.hedge_prices = []
         for i in range(int(self.depth)):
             price = round(bid - i * self.delta, 2)
-            if 0.01 <= price <= 0.1 and price < up:
+            if 0.01 <= price <= 0.01 and price <= self.up:
                 self.hedge_prices.append(price)
 
     def set_price(self, bid: float, ask: float, up: float):
@@ -106,7 +106,7 @@ class AMM:
         self.set_hedge_prices(bid, up)
         self.set_buy_prices(bid)
         
-        logging.info(f"set_price bid={bid}, ask={ask}, up={up}, buy_prices={self.buy_prices} sell_prices={self.sell_prices}")
+        logging.info(f"set_price bid={bid}, ask={ask}, up={up}, buy_prices={self.buy_prices} sell_prices={self.sell_prices} hedge_prices={self.hedge_prices}")
 
     def get_sell_orders(self, balance):
         orders = []
@@ -180,11 +180,6 @@ class AMMManager:
         imbalance = balances[MyToken.A] - balances[MyToken.B]
         percent = (900. - seconds_left) / 900.0
 
-        self.logger.info(
-            f"get_expected_orders called with params: bid={bid}, ask={ask}, up={up}, down={down} seconds_left={seconds_left}, "
-            f"orderbook_orders={len(orderbook.orders)}, balances={orderbook.balances}"
-        )
-
         self.amm_a.set_price(bid, ask, up)
         self.amm_b.set_price(round(1 - ask, 2), round(1 - bid,2), down)
 
@@ -197,12 +192,21 @@ class AMMManager:
         else:
             buy_orders_a = []
             buy_orders_b = []
+        orders += buy_orders_a + buy_orders_b   
 
-        # hedge_orders_a = self.amm_a.get_hedge_orders(imbalance)
-        # hedge_orders_b = self.amm_b.get_hedge_orders(-imbalance)
-        
-        print(f"percent {percent}, imbalance {imbalance}")
+        if balances[MyToken.A] + balances[MyToken.B] < 2 * MAX_BALANCE:
+            hedge_orders_a = self.amm_a.get_hedge_orders(imbalance)
+            hedge_orders_b = self.amm_b.get_hedge_orders(-imbalance)
+        else:
+            hedge_orders_a = []
+            hedge_orders_b = []
 
-        orders += buy_orders_a + buy_orders_b
-    
+
+
+        self.logger.info(
+            f"get_expected_orders called with params: bid={bid}, ask={ask}, up={up}, down={down} seconds_left={seconds_left}, buy_orders_a={buy_orders_a}, buy_orders_b={buy_orders_b}, sell_orders_a={sell_orders_a}, sell_orders_b={sell_orders_b}, "
+            f"orderbook_orders={len(orderbook.orders)}, balances={orderbook.balances}"
+        )
+
+
         return orders

@@ -17,6 +17,7 @@ from sklearn.linear_model import LogisticRegression
 
 from poly_market_maker.dataset import Dataset
 from poly_market_maker.tensorflow_classifier import TensorflowClassifier
+from poly_market_maker.bucket_classifier import BucketClassifier
 
 import pickle
 import tensorflow as tf
@@ -53,6 +54,7 @@ class Model:
         self.is_tensorflow = isinstance(self.model, TensorflowClassifier)
         self.filename = f'./data/models/{self.name}.keras' if self.is_tensorflow else f'./data/models/{self.name}.pkl'
         if os.path.exists(self.filename):
+            print(f"Model file exists: {self.filename} {self.model}")
             self.model = self.load()
         else:
             self.fit(dataset.train_df[self.feature_cols], dataset.train_df['label'])
@@ -84,6 +86,7 @@ class Model:
             pickle.dump(self.model, open(self.filename, 'wb'))
 
     def load(self):
+        print(f"Loading model: {self.filename}")
         # Check if this is a TensorFlow model based on file extension or instance type
         if os.path.exists(self.filename):
             if self.is_tensorflow or self.filename.endswith('.keras'):
@@ -118,11 +121,22 @@ class Model:
             'bid': float(bid),
             'ask': float(ask),
         }
-   
-        X = np.array([[row[k] for k in self.feature_cols]], dtype='float32')
+
+        # Create DataFrame instead of numpy array
+        X = pd.DataFrame([row], columns=self.feature_cols)
         probability = self.model.predict_proba(X).flatten()[1]
         print(f"price: {price}, delta: {price - target}, target: {target}, seconds_left: {seconds_left}, bid: {bid}, ask: {ask}, probability: {probability}")
-        return float(np.clip(probability, 0.0, 1.0))
+
+        # No trading
+        # if row['delta'] < -100 or 100 < row['delta']:
+        #     return row['bid']
+
+        probability = float(np.clip(probability, 0.0, 1.0))
+        if row['delta'] >= 0:
+            probability = max(0.5, probability)
+        if row['delta'] <= 0:
+            probability = min(0.5, probability)
+        return probability
 
 def main():
     dataset = Dataset()
@@ -133,47 +147,9 @@ def main():
     feature_cols = ['delta', 'percent', 'log_return', 'time', 'seconds_left', 'bid', 'ask']
 
     models = []
-    N_ESTIMATORS = 1000
-    MAX_DEPTH = 30
  
-    n_estimators = 100
-    while n_estimators < N_ESTIMATORS:
-        max_depth = 1
-        while max_depth < MAX_DEPTH:
-            models.append(Model("RandomForestClassifier", RandomForestClassifier(n_estimators=n_estimators, max_depth=max_depth, min_samples_split=100, random_state=42, n_jobs=-1), feature_cols=feature_cols, dataset=dataset))
-            max_depth *= 3
-        n_estimators *= 3
-
-    models.append(Model("RandomForestClassifier", RandomForestClassifier(n_estimators=N_ESTIMATORS, max_depth=MAX_DEPTH, min_samples_split=100, random_state=42, n_jobs=-1), feature_cols=feature_cols, dataset=dataset))
-    models = [
-        Model("RandomForestClassifier", RandomForestClassifier(n_estimators=N_ESTIMATORS, max_depth=MAX_DEPTH, min_samples_split=100, random_state=42, n_jobs=-1), feature_cols=feature_cols, dataset=dataset),
-        # Model("TensorflowClassifier", TensorflowClassifier(), feature_cols=feature_cols, dataset=dataset),
-        # Model("LogisticRegression", LogisticRegression(penalty='l2', C=1.0, solver='lbfgs', max_iter=10000)),
-        # Model("LGBMClassifier", LGBMClassifier(n_estimators=N_ESTIMATORS, max_depth=-1, learning_rate=0.001, random_state=42,)),
-        # Model("GradientBoostingClassifier", GradientBoostingClassifier(n_estimators=N_ESTIMATORS, learning_rate=0.01, max_depth=MAX_DEPTH, random_state=42)),
-    ]
-
-    for model in models:
-        feature_cols = model.feature_cols
-
-        # Check if model exists (either .pkl file or TensorFlow model directory)
-        model_dir = model.filename.replace('.pkl', '')
-        if os.path.exists(model.filename) or os.path.exists(model_dir):
-            model.model = model.load()
-        else:
-            model.fit(train_df[feature_cols], train_df['label'])
-
-        if hasattr(model.model, "predict_proba"):
-            probs = model.model.predict_proba(test_df[feature_cols])[:, 1]
-        else:
-            probs = model.model.predict(test_df[feature_cols])
-            probs = np.clip(probs, 0.0, 1.0)
-        test_df[f'prob_{model.name}'] = probs
-        metrics = dataset.evaluate_model_metrics(test_df, probability_column=f'prob_{model.name}', spread=SPREAD)
-        metrics['model'] = model.name
-        print(datetime.now(), metrics)
-
-    model = models[1]
+    models.append(Model("BucketClassifier", BucketClassifier(), feature_cols=feature_cols, dataset=dataset))
+    model = models[0]
     print(model.get_probability(87684.42122177457, 87498.58994751809, 60, 0.53, 0.55))
     print(model.get_probability(87398.58994751809, 87584.42122177457, 60, 0.45, 0.47))
 

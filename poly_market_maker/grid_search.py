@@ -136,17 +136,17 @@ def run_grid_search(dataset):
     evaluate_model(best_model, dataset.test_df.copy(), show_results=True)
 
 
-def run_optuna_search(dataset, n_trials=100):
+def run_optuna_search(dataset, n_trials=10):
     feature_cols = ['delta', 'percent', 'log_return', 'time', 'seconds_left', 'bid', 'ask']
     X_train = dataset.train_df[feature_cols]
     y_train = dataset.train_df['label']
 
     def objective(trial):
         params = {
-            "n_estimators": trial.suggest_int("n_estimators", 200, 500),
+            "n_estimators": trial.suggest_int("n_estimators", 1000, 2000),
             "max_depth": trial.suggest_int("max_depth", 30, 100),
-            "min_samples_split": trial.suggest_int("min_samples_split", 100, 200),
-            "min_samples_leaf": trial.suggest_int("min_samples_leaf", 28, 46),
+            "min_samples_split": trial.suggest_int("min_samples_split", 50, 200),
+            "min_samples_leaf": trial.suggest_int("min_samples_leaf", 50, 200),
             "max_features": trial.suggest_categorical("max_features", ["sqrt", "log2", 0.5, 1.0]),
             "bootstrap": trial.suggest_categorical("bootstrap", [False]),
             "class_weight": trial.suggest_categorical("class_weight", ["balanced", "balanced_subsample"]),
