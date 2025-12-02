@@ -1,4 +1,6 @@
 import logging
+import time
+
 import numpy as np
 from math import sqrt
 from unicodedata import bidirectional
@@ -8,32 +10,13 @@ from poly_market_maker.order import Order, Side
 from poly_market_maker.orderbook import OrderBook
 from poly_market_maker.utils import math_round_down
 
+from poly_market_maker.models import Model
+from poly_market_maker.delta_classifier import DeltaClassifier
+
 SIZE = 5
 MAX_BALANCE = 150
 MAX_IMBALANCE = 50
 MAX_HEDGE_IMBALANCE = 50
-
-
-class OrderType:        
-    def __init__(self, order: Order):
-        self.price = order.price
-        self.side = order.side
-        self.token = order.token
-
-    def __eq__(self, other):
-        if isinstance(other, OrderType):
-            return (
-                self.price == other.price
-                and self.side == other.side
-                and self.token == other.token
-            )
-        return False
-
-    def __hash__(self):
-        return hash((self.price, self.side, self.token))
-
-    def __repr__(self):
-        return f"OrderType[price={self.price}, side={self.side}, token={self.token}]"
 
 
 class AMMConfig:
@@ -123,9 +106,7 @@ class AMM:
                 )
         return orders
 
-    def get_buy_orders(self, imbalance):
-        if imbalance > MAX_IMBALANCE:
-            return [] 
+    def get_buy_orders(self):
         """Return buy orders with fixed capital per level"""
         orders = [
             Order(
@@ -139,11 +120,8 @@ class AMM:
         ]
         return orders
 
-    def get_hedge_orders(self, imbalance):
+    def get_hedge_orders(self):
         """Return buy orders with fixed capital per level"""
-        if imbalance > MAX_HEDGE_IMBALANCE:
-            return []
-        
         orders = [
             Order(
                 price=price,
@@ -164,49 +142,37 @@ class AMMManager:
         self.max_collateral = config.max_collateral
         self.p_max = config.p_max
         self.spread = config.spread
+        feature_cols = ['delta', 'percent', 'log_return', 'time', 'seconds_left', 'bid', 'ask']
+        self.model = Model(f"DeltaClassifier", DeltaClassifier(), feature_cols=feature_cols)
+        self._last_balance_time = 0
 
-    def get_expected_orders(self, orderbook: OrderBook, bid: float, ask: float, up: float, seconds_left: int):
+    def get_expected_orders(self, price: float, target: float, orderbook: OrderBook, bid: float, ask: float, seconds_left: int):
         orders = []
-        if not bid:
-            bid = 0
-        if not ask:
-            ask = 1
-        
+        bid = round(bid, 2)
+        ask = round(ask, 2)
+
         open_orders = orderbook.orders
         balances = orderbook.balances
 
-        up = round(up, 3)
-        down = 1.0 - up
-        imbalance = balances[MyToken.A] - balances[MyToken.B]
-        percent = (900. - seconds_left) / 900.0
+        # get balances every 30 seconds
+        current_time = time.time()
+        if (current_time - self._last_balance_time) >= 60:
+            self.max_balance = balances[MyToken.A] + balances[MyToken.B] + 5
+            self._last_balance_time = current_time
+
+        up = round(self.model.model.get_up(seconds_left, price - target, bid), 2)
+        # down =  round(self.model.model.get_up(seconds_left, target - price - 1e-10, round(1 - ask, 2)), 2)
+        down = round(1 - up, 2)
 
         self.amm_a.set_price(bid, ask, up)
-        self.amm_b.set_price(round(1 - ask, 2), round(1 - bid,2), down)
+        self.amm_b.set_price(round(1 - ask, 2), round(1 - bid, 2), down)
 
-        sell_orders_a = self.amm_a.get_sell_orders(balances[MyToken.A])
-        sell_orders_b = self.amm_b.get_sell_orders(balances[MyToken.B])
-
-        if balances[MyToken.A] + balances[MyToken.B] < MAX_BALANCE * percent:
-            buy_orders_a = self.amm_a.get_buy_orders(imbalance)
-            buy_orders_b = self.amm_b.get_buy_orders(-imbalance)
-        else:
-            buy_orders_a = []
-            buy_orders_b = []
-        orders += buy_orders_a + buy_orders_b   
-
-        if balances[MyToken.A] + balances[MyToken.B] < 2 * MAX_BALANCE:
-            hedge_orders_a = self.amm_a.get_hedge_orders(imbalance)
-            hedge_orders_b = self.amm_b.get_hedge_orders(-imbalance)
-        else:
-            hedge_orders_a = []
-            hedge_orders_b = []
-
-
-
-        self.logger.info(
-            f"get_expected_orders called with params: bid={bid}, ask={ask}, up={up}, down={down} seconds_left={seconds_left}, buy_orders_a={buy_orders_a}, buy_orders_b={buy_orders_b}, sell_orders_a={sell_orders_a}, sell_orders_b={sell_orders_b}, "
-            f"orderbook_orders={len(orderbook.orders)}, balances={orderbook.balances}"
-        )
-
+        sell_orders_a = [] # self.amm_a.get_sell_orders(balances[MyToken.A])
+        sell_orders_b = [] # self.amm_b.get_sell_orders(balances[MyToken.B])
+        
+        if balances[MyToken.A] + balances[MyToken.B] <= self.max_balance:
+            buy_orders_a = self.amm_a.get_buy_orders()
+            buy_orders_b = self.amm_b.get_buy_orders()  
+            orders += buy_orders_a + buy_orders_b   
 
         return orders

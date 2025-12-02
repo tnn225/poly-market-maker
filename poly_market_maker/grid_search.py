@@ -40,17 +40,17 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s - %(message)s"
 )
 
-def run_optuna_search(dataset, n_trials=10):
-    feature_cols = ['delta', 'percent', 'log_return', 'time', 'seconds_left', 'bid', 'ask']
+def run_optuna_search(dataset, n_trials=100):
+    feature_cols = ['delta', 'seconds_left', 'bid']
     X_train = dataset.train_df[feature_cols]
     y_train = dataset.train_df['label']
 
     def objective(trial):
         params = {
-            "n_estimators": trial.suggest_int("n_estimators", 100, 200),
-            "max_depth": trial.suggest_int("max_depth", 30, 100),
-            "min_samples_split": trial.suggest_int("min_samples_split", 50, 200),
-            "min_samples_leaf": trial.suggest_int("min_samples_leaf", 50, 200),
+            "n_estimators": trial.suggest_int("n_estimators", 100, 2000),
+            "max_depth": trial.suggest_int("max_depth", 3, 30),
+            "min_samples_split": trial.suggest_int("min_samples_split", 10, 200),
+            "min_samples_leaf": trial.suggest_int("min_samples_leaf", 10, 200),
             "max_features": trial.suggest_categorical("max_features", ["sqrt", "log2", 0.5, 1.0]),
             "bootstrap": trial.suggest_categorical("bootstrap", [False]),
             "class_weight": trial.suggest_categorical("class_weight", ["balanced", "balanced_subsample"]),
@@ -92,25 +92,38 @@ def run_optuna_search(dataset, n_trials=10):
 
 def run_optuna_search_lgbm(dataset, n_trials=100):
     """Optuna hyperparameter search for LGBMClassifier optimized for PnL"""
-    feature_cols = ['delta', 'percent', 'log_return', 'time', 'seconds_left', 'bid', 'ask']
+    feature_cols = ['delta', 'seconds_left', 'bid']
     X_train = dataset.train_df[feature_cols]
     y_train = dataset.train_df['label']
 
     def objective(trial):
+        boosting_type = trial.suggest_categorical("boosting_type", ["gbdt", "dart", "goss"])
+        
         params = {
+            "boosting_type": boosting_type,
             "n_estimators": trial.suggest_int("n_estimators", 100, 2000),
-            "max_depth": trial.suggest_int("max_depth", 3, 15),
+            "max_depth": trial.suggest_int("max_depth", 3, 30),
             "learning_rate": trial.suggest_float("learning_rate", 0.001, 0.1, log=True),
-            "num_leaves": trial.suggest_int("num_leaves", 16, 256),
-            "subsample": trial.suggest_float("subsample", 0.5, 1.0),
+            "num_leaves": trial.suggest_int("num_leaves", 16, 128),
             "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
-            "min_child_samples": trial.suggest_int("min_child_samples", 10, 200),
-            "reg_alpha": trial.suggest_float("reg_alpha", 0.0001, 10.0, log=True),
-            "reg_lambda": trial.suggest_float("reg_lambda", 0.0001, 10.0, log=True),
+            "min_child_samples": trial.suggest_int("min_child_samples", 10, 100),
+            "min_split_gain": trial.suggest_float("min_split_gain", 1e-4, 1.0, log=True),
+            "min_child_weight": trial.suggest_float("min_child_weight", 1e-4, 10.0, log=True),
+            "reg_alpha": trial.suggest_float("reg_alpha", 1e-4, 10.0, log=True),
+            "reg_lambda": trial.suggest_float("reg_lambda", 1e-4, 10.0, log=True),
             "random_state": 42,
             "n_jobs": -1,
             "verbosity": -1,
         }
+
+        # Conditional parameters
+        if boosting_type == "dart":
+            params["drop_rate"] = trial.suggest_float("drop_rate", 0.1, 0.5)
+            params["subsample"] = trial.suggest_float("subsample", 0.5, 1.0)
+        elif boosting_type == "gbdt":
+            params["subsample"] = trial.suggest_float("subsample", 0.5, 1.0)
+        # goss ignores subsample, no extra param needed
+        
         print(f"Trial {trial.number} params: {params}")
         skf = StratifiedKFold(n_splits=5, shuffle=False)
         pnls = []
@@ -148,8 +161,7 @@ def run_optuna_search_lgbm(dataset, n_trials=100):
 
 def main():
     dataset = Dataset()
-    # run_grid_search(dataset)
-    # run_optuna_search(dataset)
+    run_optuna_search(dataset, n_trials=100)
     run_optuna_search_lgbm(dataset, n_trials=100)
 
 

@@ -16,14 +16,14 @@ def get_args(args) -> dict:
         "--sync-interval",
         type=int,
         required=False,
-        default=15,
+        default=5,
         help="The number of seconds in between synchronizations",
     )
 
     parser.add_argument(
         "--refresh-frequency",
         type=int,
-        default=15,
+        default=5,
         help="Order book refresh frequency (in seconds, default: 5)",
     )
 

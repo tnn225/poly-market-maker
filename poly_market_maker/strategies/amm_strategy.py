@@ -49,11 +49,11 @@ class AMMStrategy(BaseStrategy):
             max_collateral=config.get("max_collateral"),
         )
 
-    def get_orders(self, orderbook: OrderBook, bid: float, ask: float, up: float, seconds_left: int):
+    def get_orders(self, price: float, target: float, orderbook: OrderBook, bid: float, ask: float, seconds_left: int):
         orders_to_cancel = []
         orders_to_place = []
 
-        expected_orders = self.amm_manager.get_expected_orders(orderbook, bid, ask, up, seconds_left)
+        expected_orders = self.amm_manager.get_expected_orders(price, target, orderbook, bid, ask, seconds_left)
 
         expected_order_types = set(OrderType(order) for order in expected_orders)
 

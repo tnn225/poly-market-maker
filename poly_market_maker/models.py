@@ -19,6 +19,7 @@ from sklearn.calibration import CalibratedClassifierCV
 from poly_market_maker.dataset import Dataset
 from poly_market_maker.tensorflow_classifier import TensorflowClassifier
 from poly_market_maker.bucket_classifier import BucketClassifier
+from poly_market_maker.delta_classifier import DeltaClassifier
 
 import pickle
 import tensorflow as tf
@@ -136,11 +137,13 @@ def main():
     dataset = Dataset()
     train_df = dataset.train_df
     test_df = dataset.test_df
-    feature_cols=['delta', 'percent', 'log_return', 'time', 'seconds_left', 'bid', 'ask']
+    feature_cols=['delta', 'seconds_left', 'bid']
 
     random_forest_params = {'n_estimators': 2000, 'max_depth': 30, 'min_samples_split': 100, 'min_samples_leaf': 100, 'max_features': 'sqrt', 'bootstrap': False, 'class_weight': 'balanced'}
+    random_forest_params = {'n_estimators': 1567, 'max_depth': 10, 'min_samples_split': 143, 'min_samples_leaf': 12, 'max_features': 'sqrt', 'bootstrap': False, 'class_weight': 'balanced'}
     model = Model(f"RandomForestClassifier_features_{len(feature_cols)}_{random_forest_params['n_estimators']}_{random_forest_params['max_depth']}_{random_forest_params['min_samples_split']}_{random_forest_params['min_samples_leaf']}_{random_forest_params['max_features']}_{random_forest_params['bootstrap']}_{random_forest_params['class_weight']}", RandomForestClassifier(**random_forest_params), feature_cols=feature_cols, dataset=dataset)
     # model = Model(f"CalibratedClassifierCV_features_{len(feature_cols)}_{random_forest_params['n_estimators']}_{random_forest_params['max_depth']}_{random_forest_params['min_samples_split']}_{random_forest_params['min_samples_leaf']}_{random_forest_params['max_features']}_{random_forest_params['bootstrap']}_{random_forest_params['class_weight']}", get_calibrated_model(random_forest_params), feature_cols=feature_cols, dataset=dataset)
+    # model = Model(f"DeltaClassifier", DeltaClassifier(), feature_cols=feature_cols, dataset=dataset)
 
     prob = model.predict_proba(test_df[feature_cols])
     test_df['probability'] = prob[:, 1]

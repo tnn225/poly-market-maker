@@ -63,6 +63,7 @@ class OrderBookManager:
         self._orders_placed = list()
         self._order_ids_cancelling = set()
         self._order_ids_cancelled = set()
+        self._last_balance_time = 0
 
     def get_orders_with(self, get_orders_function: Callable[[], list[Order]]):
         """
@@ -355,8 +356,12 @@ class OrderBookManager:
                 # get orders
                 orders = self._run_get_orders()
 
-                # get balances
-                balances = self._run_get_balances()
+                # get balances every 30 seconds
+                current_time = time.time()
+                if (current_time - self._last_balance_time) >= 30:
+                    # get balances
+                    balances = self._run_get_balances()
+                    self._last_balance_time = current_time
 
                 with self._lock:
                     self._order_ids_cancelled = (

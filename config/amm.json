@@ -1,6 +1,6 @@
 {
   "p_min": 0.01,
-  "p_max": 0.90,
+  "p_max": 0.3,
   "spread": 0.05,
   "delta": 0.01,
   "depth": 1,

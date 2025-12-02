@@ -27,7 +27,8 @@ from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
 SPREAD = 0.01
-DAYS = 30
+DAYS = 7
+
 logger = logging.getLogger(__name__)
 logging.basicConfig(
     level=logging.INFO,
@@ -188,7 +189,7 @@ class Dataset:
             raise ValueError(f"Dataframe must contain '{probability_column}' column for evaluation.")
 
         eval_df = df.dropna(subset=[probability_column, 'bid', 'is_up']).copy()
-        eval_df['action'] = (eval_df[probability_column] - spread >= eval_df['bid'])
+        eval_df['action'] = (eval_df[probability_column] - spread >= eval_df['bid'] and eval_df['bid'] < 0.4)
 
         trade_df = eval_df[eval_df['action']].copy()
         trade_df['revenue'] = trade_df['is_up'].astype(float)

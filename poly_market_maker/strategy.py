@@ -17,6 +17,7 @@ from poly_market_maker.strategies.bands_strategy import BandsStrategy
 
 from poly_market_maker.dataset import Dataset
 from poly_market_maker.bucket_classifier import BucketClassifier
+from poly_market_maker.delta_classifier import DeltaClassifier
 
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
@@ -59,8 +60,12 @@ class StrategyManager:
         self.prediction_engine = prediction_engine
         # dataset = Dataset()
         feature_cols = ['delta', 'percent', 'log_return', 'time', 'seconds_left', 'bid', 'ask']
-        self.model = Model(f"RandomForestClassifier_1448_36_130_135_log2_False_balanced_subsample", RandomForestClassifier(n_estimators=253, max_depth=40, min_samples_split=54, min_samples_leaf=33, max_features=0.5, bootstrap=False, class_weight='balanced', random_state=42, n_jobs=-1), feature_cols=feature_cols)
+
+        #self.model = Model(f"DeltaClassifier", DeltaClassifier(), feature_cols=feature_cols)
+        # Model(f"RandomForestClassifier_1448_36_130_135_log2_False_balanced_subsample", RandomForestClassifier(n_estimators=253, max_depth=40, min_samples_split=54, min_samples_leaf=33, max_features=0.5, bootstrap=False, class_weight='balanced', random_state=42, n_jobs=-1), feature_cols=feature_cols)
         # self.model = Model(f"BucketClassifier", BucketClassifier(), feature_cols=feature_cols, dataset=dataset)
+        
+        
 
         match Strategy(strategy):
             case Strategy.AMM:
@@ -88,15 +93,17 @@ class StrategyManager:
         if price is None or target is None or seconds_left is None:
             self.logger.error(f"Price, target, or seconds_left is None")
             return
+
+        if price <= 0 or target <= 0 or seconds_left <= 0:
+            self.logger.error(f"Price, target, or seconds_left should be positive")
+            return
         
         bid, ask = self.order_book_engine.get_bid_ask(MyToken.A)
         if bid is None or ask is None:
             self.logger.error(f"Bid or ask is None")
             return
         
-        up = self.model.get_probability(price, target, seconds_left, bid, ask)
-
-        (orders_to_cancel, orders_to_place) = self.strategy.get_orders(orderbook, bid, ask, up, seconds_left)
+        (orders_to_cancel, orders_to_place) = self.strategy.get_orders(price, target, orderbook, bid, ask, seconds_left)
 
         self.logger.debug(f"order existing: {len(orderbook.orders)}")
         self.logger.debug(f"order to cancel: {len(orders_to_cancel)}")
