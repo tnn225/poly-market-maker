@@ -136,3 +136,4 @@ logs/
 
 # vscode settings
 .vscode/
+.DS_Store
