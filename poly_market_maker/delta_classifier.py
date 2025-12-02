@@ -12,12 +12,19 @@ SPREAD = 0.05
 class DeltaClassifier:
     def __init__(self):
         self.delta_thresholds = None
+        self.df = {}  # Store dataframes by seconds_left for plotting
 
     def fit(self, X, y):
         # Create a temporary dataframe with required columns
         required_cols = ['delta', 'seconds_left', 'bid']
         df = X[required_cols].copy()
         df['is_up'] = y
+        df['label'] = y.astype(int)
+
+        # Store dataframe filtered by seconds_left for plotting
+        self.df = {}
+        for seconds_left in df['seconds_left'].unique():
+            self.df[seconds_left] = df[df['seconds_left'] == seconds_left].copy()
 
         count = {} 
         up_count = {}
@@ -142,7 +149,65 @@ class DeltaClassifier:
             return float(price >= target)
 
         up = self.get_up(seconds_left, delta, bid)
-        return up 
+        return up
+
+    def plot_delta_by_rate(self, SECONDS_LEFT=60):
+        """
+        Plot delta thresholds vs rate for a specific seconds_left value, with data points colored by label.
+        
+        Parameters:
+        -----------
+        SECONDS_LEFT : int or float, optional
+            The seconds_left value to plot. Defaults to 60.
+        """
+        if self.delta_thresholds is None or len(self.delta_thresholds) == 0:
+            print("Model has not been trained yet. Call fit() first.")
+            return
+        
+        # Find the closest seconds_left value if exact match not found
+        seconds_left_key = SECONDS_LEFT
+        if SECONDS_LEFT not in self.delta_thresholds:
+            available_seconds = list(self.delta_thresholds.keys())
+            if available_seconds:
+                closest = min(available_seconds, key=lambda x: abs(x - SECONDS_LEFT))
+                if abs(closest - SECONDS_LEFT) <= 5:  # Within 5 seconds
+                    seconds_left_key = closest
+                    print(f"Using closest seconds_left value: {seconds_left_key}")
+                else:
+                    print(f"No data found for seconds_left = {SECONDS_LEFT}")
+                    return
+            else:
+                print("No delta thresholds available.")
+                return
+        
+        # Get thresholds for this seconds_left
+        thresholds = self.delta_thresholds[seconds_left_key]
+        
+        if len(thresholds) == 0:
+            print(f"No thresholds available for seconds_left = {seconds_left_key}")
+            return
+        
+        # Extract rates and deltas from thresholds, filtering to 0.01 <= rate <= 0.99
+        rates = sorted([r for r in thresholds.keys() if 0.01 <= r <= 0.99])
+        deltas = [thresholds[rate] for rate in rates]
+        
+        # Create figure
+        fig, ax = plt.subplots(1, 1, figsize=(12, 8))
+        
+        # Plot delta thresholds vs rate
+        ax.plot(rates, deltas, marker='o', linewidth=2, markersize=6, 
+               color='blue', label='Delta Thresholds')
+        
+        ax.set_xlabel('rate', fontsize=12)
+        ax.set_ylabel('delta', fontsize=12)
+        ax.set_title(f'Delta Thresholds vs Rate for seconds_left = {SECONDS_LEFT}', fontsize=14)
+        ax.legend(loc='best', fontsize=10)
+        ax.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        plt.show()
+        
+        return rates, deltas
 
     def plot_delta_thresholds(self, delta_thresholds, RATES):
         """
@@ -207,6 +272,10 @@ def main():
     feature_cols = ['delta', 'seconds_left', 'bid', 'interval']
     model = DeltaClassifier()
     model.fit(train_df[feature_cols], train_df['label'])
+
+    # Plot delta vs rate for seconds_left = 60
+    SECONDS_LEFT = 2
+    model.plot_delta_by_rate(SECONDS_LEFT)
 
     prob = model.predict_proba(test_df[feature_cols])
     test_df['probability'] = prob[:, 1]

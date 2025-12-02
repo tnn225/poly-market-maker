@@ -27,7 +27,7 @@ from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
 SPREAD = 0.01
-DAYS = 7
+DAYS = 30
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(

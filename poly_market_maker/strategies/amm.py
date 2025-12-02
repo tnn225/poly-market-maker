@@ -161,8 +161,8 @@ class AMMManager:
             self._last_balance_time = current_time
 
         up = round(self.model.model.get_up(seconds_left, price - target, bid), 2)
-        # down =  round(self.model.model.get_up(seconds_left, target - price - 1e-10, round(1 - ask, 2)), 2)
-        down = round(1 - up, 2)
+        down =  round(self.model.model.get_up(seconds_left, target - price - 1e-10, round(1 - ask, 2)), 2)
+        # down = round(1 - up, 2)
 
         self.amm_a.set_price(bid, ask, up)
         self.amm_b.set_price(round(1 - ask, 2), round(1 - bid, 2), down)
