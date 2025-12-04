@@ -99,7 +99,7 @@ def init(df):
 
 def get_delta_thresholds(df, quantile):
     thresholds = df.groupby(['seconds_left_bin', 'bid'])['delta'].quantile(quantile)
-    plot_thresholds(thresholds)
+    # plot_thresholds(thresholds)
     return thresholds
 
 def plot_thresholds(thresholds):
@@ -145,8 +145,8 @@ def main():
     train_df = init(dataset.train_df)
     test_df = init(dataset.test_df)
 
-    # for quantile in [0.01, 0.05, 0.10, 0.25, 0.50, 0.75, 0.9, 0.95, 0.99]:
-    for quantile in [0.99]:
+    for quantile in [0.01, 0.05, 0.10, 0.25, 0.50, 0.75, 0.9, 0.95, 0.99]:
+    # for quantile in [0.1]:
         evaluate(test_df, quantile)
     
 if __name__ == "__main__":

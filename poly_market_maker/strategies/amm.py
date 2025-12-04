@@ -63,7 +63,7 @@ class AMM:
     def set_buy_prices(self, bid: float):
         self.buy_prices = []
         for i in range(int(self.depth)):
-            price = round(bid - i * self.delta, 2)
+            price = min(round(bid - i * self.delta, 2), 0.49)
             if self.p_min <= price <= self.p_max and price <= self.up - self.spread:
                 self.buy_prices.append(price)
 
@@ -74,11 +74,11 @@ class AMM:
             if 0.01 <= price <= 0.99 and price >= self.up + self.spread:
                 self.sell_prices.append(price)
 
-    def set_hedge_prices(self, bid: float, up: float):
+    def set_hedge_prices(self):
         self.hedge_prices = []
         for i in range(int(self.depth)):
-            price = round(bid - i * self.delta, 2)
-            if 0.01 <= price <= 0.01 and price <= self.up:
+            price = round(0.01 + i * self.depth, 2)
+            if 0.01 <= price <= 0.1:
                 self.hedge_prices.append(price)
 
     def set_price(self, bid: float, ask: float, up: float):
@@ -86,7 +86,7 @@ class AMM:
         self.bid = bid 
         self.ask = ask 
         self.set_sell_prices(ask)
-        self.set_hedge_prices(bid, up)
+        self.set_hedge_prices()
         self.set_buy_prices(bid)
         
         logging.info(f"set_price bid={bid}, ask={ask}, up={up}, buy_prices={self.buy_prices} sell_prices={self.sell_prices} hedge_prices={self.hedge_prices}")
@@ -147,6 +147,8 @@ class AMMManager:
         self._last_balance_time = 0
 
     def get_expected_orders(self, price: float, target: float, orderbook: OrderBook, bid: float, ask: float, seconds_left: int):
+        delta = price - target
+        self.logger.debug(f"get_expected_orders seconds_left={seconds_left} price={price} {delta:+.2f}, bid={bid:.2f}, ask={ask:.2f}")
         orders = []
         bid = round(bid, 2)
         ask = round(ask, 2)
@@ -160,8 +162,8 @@ class AMMManager:
             self.max_balance = balances[MyToken.A] + balances[MyToken.B] + 5
             self._last_balance_time = current_time
 
-        up = round(self.model.model.get_up(seconds_left, price - target, bid), 2)
-        down =  round(self.model.model.get_up(seconds_left, target - price - 1e-10, round(1 - ask, 2)), 2)
+        up = 0.5 if price >= target else 0 # round(self.model.model.get_up(seconds_left, price - target, bid), 2)
+        down = 0.5 if price < target else 0 # round(self.model.model.get_up(seconds_left, target - price - 1e-10, round(1 - ask, 2)), 2)
         # down = round(1 - up, 2)
 
         self.amm_a.set_price(bid, ask, up)
@@ -174,5 +176,11 @@ class AMMManager:
             buy_orders_a = self.amm_a.get_buy_orders()
             buy_orders_b = self.amm_b.get_buy_orders()  
             orders += buy_orders_a + buy_orders_b   
+
+        # if balances[MyToken.A] + balances[MyToken.B] > self.max_balance:
+        if False:
+            hedge_orders_a = self.amm_a.get_hedge_orders()  
+            hedge_orders_b = self.amm_b.get_hedge_orders()
+            orders += hedge_orders_a + hedge_orders_b
 
         return orders

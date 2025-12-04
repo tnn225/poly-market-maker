@@ -118,10 +118,13 @@ class App:
 
             if self.order_book_engine:
                 self.order_book_engine.stop()
+                self.order_book_engine = None
             self.order_book_engine = OrderBookEngine(self.market) 
             self.order_book_engine.start()
 
             self.prediction_engine = PredictionEngine()
+
+            del self.strategy_manager
 
             self.strategy_manager = StrategyManager(
                 self.args_strategy,

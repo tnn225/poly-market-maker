@@ -64,9 +64,11 @@ class Dataset:
         # Load data from CSV files for each date
         dataframes = []
         for date in dates:
-            df = self._read_rows(date)
-            if df is not None and not df.empty:
-                dataframes.append(df)
+            if os.path.exists(f"./data/price_{date}.csv"):
+                df = self._read_rows(date)
+                print(f"date: {date}, df shape: {df.shape}")
+                if df is not None and not df.empty:
+                    dataframes.append(df)
 
         # Combine all dataframes
         if dataframes:
@@ -92,6 +94,34 @@ class Dataset:
         except Exception as e:
             logger.error(f"Error reading {path}: {e}")
             return None
+
+    def _balance_df(self, df):
+        grouped = df.groupby('label')['timestamp'].unique()
+        #print(grouped)
+        for label, timestamps in grouped.items():
+            # print(label, timestamps)
+            timestamps = sorted(timestamps)
+            print(f"initial label {label}, len: {len(timestamps)}")
+
+        # Find minimum count of unique timestamps across all labels
+        min_timestamps_count = min(len(timestamps) for timestamps in grouped)
+        # print(f"Minimum timestamp count: {min_timestamp_count}")
+
+        for label, timestamps in grouped.items():
+            # print(label, timestamps)
+            timestamps = sorted(timestamps)
+            if len(timestamps) > min_timestamps_count:
+                timestamp = timestamps[min_timestamps_count]
+                # print(f"timestamp: {timestamp}")
+                df = df[(df['timestamp'] < timestamp) | (df['label'] != label)]
+        #print(df.head())
+        grouped = df.groupby('label')['timestamp'].unique()
+        for label, timestamps in grouped.items():
+            # print(label, timestamps)
+            timestamps = sorted(timestamps)
+            print(f"final label {label}, len: {len(timestamps)}")
+
+        return df
 
     def _add_target_and_is_up(self):
         # Initialize columns
@@ -132,8 +162,7 @@ class Dataset:
             & (self.df['bid'].notna())
             & (self.df['ask'].notna())
             & (self.df['target'].notna())
-            & (self.df['bid'] > 0)
-            & (self.df['ask'] > 0)
+            & ((self.df['bid'] > 0) | (self.df['ask'] > 0))
             & (self.df['price'] > 0)
             & (self.df['target'] > 0)
         ].copy()
@@ -186,6 +215,9 @@ class Dataset:
 
         # print(self.train_df.head())
         # print(self.test_df.head())
+
+        self.train_df = self._balance_df(self.train_df)
+        self.test_df = self._balance_df(self.test_df)
 
         return self.train_df, self.test_df
 
