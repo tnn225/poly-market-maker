@@ -35,14 +35,18 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s - %(message)s"
 )
 
+
+FEATURE_COLS = ['seconds_left_log', 'log_return', 'delta', 'seconds_left', 'bid', 'ask', 'z_score', 'prob_est']
+
 class Dataset:
-    def __init__(self):
-        self._delta_percentiles = None
+    def __init__(self, days=DAYS):
+        self.days = days
         self._read_dates()
         self._add_target_and_is_up()
         self._train_test_split()
-
+        self.feature_cols = FEATURE_COLS
         self.show()
+
 
     def show(self):
         print(self.train_df.head())
@@ -56,7 +60,7 @@ class Dataset:
 
     def _read_dates(self):
         today = datetime.now()
-        dates = [(today - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(DAYS)]
+        dates = [(today - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(self.days)]
         # Load data from CSV files for each date
         dataframes = []
         for date in dates:
@@ -148,6 +152,7 @@ class Dataset:
     
         self.df['seconds_left'] = 900 - (self.df['timestamp'] - self.df['interval'])
         self.df['time'] = self.df['seconds_left'].astype(float) / 900.
+        self.df['seconds_left_log'] = np.log(self.df['seconds_left'])
                 
         # Sort by timestamp to ensure proper rolling window calculation
         self.df = self.df.sort_values('timestamp').reset_index(drop=True)
@@ -183,29 +188,6 @@ class Dataset:
         # print(self.test_df.head())
 
         return self.train_df, self.test_df
-
-    def evaluate_strategy(self, df: pd.DataFrame, spread: float = 0.05, probability_column: str = 'probability'):
-        if probability_column not in df.columns:
-            raise ValueError(f"Dataframe must contain '{probability_column}' column for evaluation.")
-
-        eval_df = df.dropna(subset=[probability_column, 'bid', 'is_up']).copy()
-        eval_df['action'] = (eval_df[probability_column] - spread >= eval_df['bid'] and eval_df['bid'] < 0.4)
-
-        trade_df = eval_df[eval_df['action']].copy()
-        trade_df['revenue'] = trade_df['is_up'].astype(float)
-        trade_df['cost'] = trade_df['bid']
-        trade_df['pnl'] = trade_df['revenue'] - trade_df['cost']
-
-        summary = {
-            'num_rows': len(df),
-            'num_trades': len(trade_df),
-            'revenue': trade_df['revenue'].sum(),
-            'cost': trade_df['cost'].sum(),
-            'pnl': trade_df['pnl'].sum(),
-            'margin': trade_df['pnl'].mean(),
-        }
-
-        return summary, trade_df
 
     def evaluate_model_metrics(self, df: pd.DataFrame, probability_column: str = 'probability', spread: float = 0.05):
         eval_df = df.dropna(subset=[probability_column, 'label']).copy()
@@ -265,9 +247,9 @@ class Dataset:
 
 def main():
     dataset = Dataset()
-    train_df = dataset.train_df
-    test_df = dataset.test_df
-    dataset.show()
+    # train_df = dataset.train_df
+    # test_df = dataset.test_df
+    # dataset.show()
 
 
     return 

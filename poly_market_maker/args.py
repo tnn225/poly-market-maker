@@ -31,7 +31,7 @@ def get_args(args) -> dict:
         "--min-size",
         type=float,
         required=False,
-        default=15,
+        default=5,
         help="The minimum size of a newly placed order",
     )
 
