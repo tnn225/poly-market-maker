@@ -82,7 +82,7 @@ class TradeManager:
             return
 
         up = 0.5 if price >= target else 0
-        down = 0.5 if price < target else 0
+        down = 0.5 if price <= target else 0
         print(f"{seconds_left} {price:.4f} {delta:+.2f} Bid: {bid} Ask: {ask} Up: {up:.2f} Down: {down:.2f}")
 
         orders_a = self.amm_a.get_orders(seconds_left, price, delta, bid, ask, up)
@@ -209,9 +209,6 @@ def main():
             continue
         last = timestamp
 
-        if target is None:
-            print(f"{seconds_left} {price} Bid: - no target")
-            continue            
 
         now = int(timestamp)
         seconds_left = 900 - (now % 900)
@@ -222,7 +219,11 @@ def main():
 
             interval = now // 900 * 900
             trade_manager = TradeManager(interval)
-    
+
+        if target is None or data.get('interval') < interval:
+            print(f"{seconds_left} {price} - no target")
+            continue            
+
         trade_manager.trade(seconds_left, price, target)
 
 if __name__ == "__main__":

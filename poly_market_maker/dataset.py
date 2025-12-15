@@ -28,6 +28,8 @@ from torch.utils.data import DataLoader, TensorDataset
 
 SPREAD = 0.01
 DAYS = 30
+SECONDS_LEFT_BIN_SIZE = 15
+SECONDS_LEFT_BINS = int(900 / SECONDS_LEFT_BIN_SIZE)
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -78,8 +80,8 @@ class Dataset:
 
         self.df['timestamp'] = self.df['timestamp'].astype(int)
         self.df['price'] = self.df['price'].astype(float)
-        self.df['bid'] = self.df['bid'].astype(float)
-        self.df['ask'] = self.df['ask'].astype(float)
+        self.df['bid'] = round(self.df['bid'].astype(float), 2)
+        self.df['ask'] = round(self.df['ask'].astype(float), 2) 
 
 
     def _read_rows(self, date):
@@ -201,6 +203,16 @@ class Dataset:
         
         # Use norm.cdf to get probability estimates
         self.df["prob_est"] = norm.cdf(self.df["z_score"])
+
+        self.df['bid_bin'] = self.df['bid'].apply(self.get_bid_bin)
+        self.df['seconds_left_bin'] = self.df['seconds_left'].apply(self.get_seconds_left_bin)
+
+    def get_seconds_left_bin(self, seconds_left):
+        return int(seconds_left // SECONDS_LEFT_BIN_SIZE)
+
+    def get_bid_bin(self, bid):
+        return int(bid * 100)
+
 
     def _train_test_split(self, test_ratio: float = 0.2):
         df_sorted = self.df.sort_values('timestamp').reset_index(drop=True)

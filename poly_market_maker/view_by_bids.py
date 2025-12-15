@@ -39,8 +39,6 @@ from poly_market_maker.bucket_classifier import BucketClassifier
 from poly_market_maker.bid_classifier import BidClassifier
 
 SPREAD = 0.05
-SECONDS_LEFT_BIN_SIZE = 15
-SECONDS_LEFT_BINS = int(900 / SECONDS_LEFT_BIN_SIZE)
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -86,15 +84,7 @@ def get_bids_by_seconds_left_bin(df, quantile, seconds_left_bin):
         print(f"Bid: {bid:.2f} Delta: {delta:.2f}")
     print(f"Bids: {delta_by_bid.index} Quantile: {quantile:.2f} Delta: {delta_by_bid.values}")
 
-def get_seconds_left_bin(seconds_left):
-    return int(seconds_left // 15)
-
-def get_bid_bin(bid):
-    return int(bid * 100)
-
-
 def init(df):
-    df['seconds_left_bin'] = df['seconds_left'].apply(get_seconds_left_bin)
     return df
 
 def get_delta_thresholds(df, quantile):
@@ -142,8 +132,12 @@ def evaluate(df, quantile):
 
 def main():
     dataset = Dataset()
-    train_df = init(dataset.train_df)
-    test_df = init(dataset.test_df)
+    train_df = dataset.train_df
+    test_df = dataset.test_df
+
+    if True:
+        show_delta_by_bid(test_df, 900)
+        return
 
     for quantile in [0.01, 0.05, 0.10, 0.25, 0.50, 0.75, 0.9, 0.95, 0.99]:
     # for quantile in [0.1]:
