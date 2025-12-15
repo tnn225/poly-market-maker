@@ -91,12 +91,10 @@ class TradeManager:
         print(f"  Orders_a: {orders_a} Orders_b: {orders_b}")
         orders = orders_a + orders_b
 
-        if len(orders) <= 0:
-            return
-
         self.orders = self.get_orders()
         (orders_to_cancel, orders_to_place) = self.get_orders_to_cancel_and_place(orders)
         print(f"  Orders_to_cancel: {orders_to_cancel} Orders_to_place: {orders_to_place} Orders: {self.orders}")
+
         if not DEBUG and len(orders_to_cancel) + len(orders_to_place) > 0:
             self.cancel_orders(orders_to_cancel)
             self.place_orders(orders_to_place)

@@ -37,15 +37,16 @@ class SimpleOrder:
     def set_buy_prices(self, bid: float):
         self.buy_prices = []
         for i in range(int(self.depth)):
-            price = min(round(bid - i * self.delta, 2), 0.49)
-            if self.p_min <= price <= self.p_max and price <= self.up - self.spread:
+            # price = min(round(bid - i * self.delta, 2), 0.49)
+            price = round(bid - i * self.delta, 2)
+            if self.p_min <= price <= self.p_max:
                 self.buy_prices.append(price)
 
     def set_sell_prices(self, ask: float):
         self.sell_prices = []
         for i in range(int(self.depth)):
             price = round(ask + i * self.delta, 2)
-            if 0.01 <= price <= 0.99 and price >= self.up + self.spread:
+            if 0.01 <= price <= 0.99:
                 self.sell_prices.append(price)
 
     def set_hedge_prices(self):
