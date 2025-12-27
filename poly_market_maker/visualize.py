@@ -43,31 +43,58 @@ logging.basicConfig(
 
 FEATURE_COLS = ['delta', 'percent', 'log_return', 'time', 'seconds_left', 'bid', 'ask']
 
+def show_delta(df):
+    fig, ax = plt.subplots(1, 1, figsize=(12, 8))
+    ax.hist(df['delta'].dropna(), bins=200, alpha=0.7, edgecolor='black')
+    ax.set_xlabel('delta', fontsize=12)
+    ax.set_ylabel('Frequency', fontsize=12)
+    ax.set_title('Distribution of Delta', fontsize=14)
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
+def show_interval_min_max(df):
+    # Group by interval to get min and max delta, and get the timestamp for each interval
+    grouped = df.groupby('interval').agg({
+        'delta': ['min', 'max'],
+        'timestamp': 'first'  # Get the first timestamp for each interval
+    })
+    
+    # Flatten column names
+    grouped.columns = ['delta_min', 'delta_max', 'timestamp']
+    grouped = grouped.reset_index()
+    grouped = grouped.sort_values('timestamp')
+    
+    # Print statistics about intervals with min_delta = 0 and max_delta = 0
+    total_intervals = len(grouped)
+    intervals_min_zero = len(grouped[grouped['delta_min'] >= 0])
+    intervals_max_zero = len(grouped[grouped['delta_max'] <= 0])
+    
+    print(f"Number of intervals with min_delta = 0: {intervals_min_zero} ({intervals_min_zero/total_intervals*100:.2f}%)")
+    print(f"Number of intervals with max_delta = 0: {intervals_max_zero} ({intervals_max_zero/total_intervals*100:.2f}%)")
+    
+    # Plot min and max lines
+    fig, ax = plt.subplots(1, 1, figsize=(12, 6))
+    ax.plot(grouped['timestamp'], grouped['delta_min'], label='Min Delta', linewidth=1, alpha=0.7)
+    ax.plot(grouped['timestamp'], grouped['delta_max'], label='Max Delta', linewidth=1, alpha=0.7)
+    ax.fill_between(grouped['timestamp'], grouped['delta_min'], grouped['delta_max'], alpha=0.2)
+    
+    ax.set_xlabel('Timestamp', fontsize=12)
+    ax.set_ylabel('Delta', fontsize=12)
+    ax.set_title('Min and Max Delta by Interval', fontsize=14)
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
 def main():
     dataset = Dataset()
     train_df = dataset.train_df
     test_df = dataset.test_df
 
-    # Plot delta distribution
-    if 'delta' in train_df.columns:
-        fig, ax = plt.subplots(1, 1, figsize=(12, 8))
-        
-        # Plot histogram of delta values
-        ax.hist(train_df['log_return'].dropna(), bins=200, alpha=0.7, edgecolor='black')
-        ax.set_xlabel('log_return', fontsize=12)
-        ax.set_ylabel('Frequency', fontsize=12)
-        ax.set_title('Distribution of Delta in Training Data', fontsize=14)
-        ax.grid(True, alpha=0.3)
-        
-        plt.tight_layout()
-        plt.show()
-        
-        # Print some statistics
-        print(f"Delta Statistics:")
-        print(train_df['delta'].describe())
-    else:
-        print("'delta' column not found in train_df")
-    
-
+    # Plot min and max delta by interval
+    if 'interval' in train_df.columns and 'delta' in train_df.columns:
+        show_interval_min_max(train_df)
+  
 if __name__ == "__main__":
     main()

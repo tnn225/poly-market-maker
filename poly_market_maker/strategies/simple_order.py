@@ -38,14 +38,14 @@ class SimpleOrder:
         self.buy_prices = []
         for i in range(int(self.depth)):
             # price = min(round(bid - i * self.delta, 2), 0.49)
-            price = round(bid - i * self.delta, 2)
+            price = min(self.up, round(bid - i * self.delta, 2))
             if self.p_min <= price <= self.p_max:
                 self.buy_prices.append(price)
 
     def set_sell_prices(self, ask: float):
         self.sell_prices = []
         for i in range(int(self.depth)):
-            price = round(ask + i * self.delta, 2)
+            price = min(round(1 - self.up - 0.01, 2), round(ask + i * self.delta, 2))
             if 0.01 <= price <= 0.99:
                 self.sell_prices.append(price)
 
@@ -110,4 +110,4 @@ class SimpleOrder:
 
     def get_orders(self, seconds_left: int, price: float, delta: float, bid: float, ask: float, up: float):
         self.set_price(bid, ask, up)
-        return self.get_buy_orders() # + self.get_hedge_orders()
+        return self.get_buy_orders()

@@ -10,6 +10,7 @@ import csv
 from collections import deque
 
 from lightgbm import LGBMClassifier
+from poly_market_maker.intervals import Interval
 
 from scipy.stats import norm
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
@@ -43,6 +44,7 @@ FEATURE_COLS = ['seconds_left_log', 'log_return', 'delta', 'seconds_left', 'bid'
 class Dataset:
     def __init__(self, days=DAYS):
         self.days = days
+        self.intervals = Interval(DAYS)
         self._read_dates()
         self._add_target_and_is_up()
         self._train_test_split()
@@ -135,6 +137,11 @@ class Dataset:
         
         # Create price lookup dictionary for O(1) access
         price_dict = dict(zip(self.df['timestamp'], self.df['price']))
+        for interval in self.df['interval'].unique():
+            data = self.intervals.get_data('BTC', interval)
+            if data:
+                price_dict[interval] = data['openPrice']
+                price_dict[interval + 900] = data['closePrice']
         
         # Calculate target and is_up for each unique interval
         interval_values = {}
@@ -293,7 +300,7 @@ def main():
     dataset = Dataset()
     # train_df = dataset.train_df
     # test_df = dataset.test_df
-    # dataset.show()
+    dataset.show()
 
 
     return 

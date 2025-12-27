@@ -3,8 +3,9 @@ import pandas as pd
 import numpy as np
 from poly_market_maker.dataset import Dataset
 
+SPREAD = 0.1
 DELTA_BUCKETS = 20
-SECONDS_LEFT_BUCKET_SIZE = 60
+SECONDS_LEFT_BUCKET_SIZE = 180
 SECONDS_LEFT_BUCKETS = int(900 / SECONDS_LEFT_BUCKET_SIZE)  # every 15 seconds = 60 bins
 MAX_SECONDS_LEFT_BIN = SECONDS_LEFT_BUCKETS 
 
@@ -18,7 +19,10 @@ class BucketClassifier:
         # Create a temporary dataframe for binning
         df = X[['delta', 'seconds_left']].copy()
         df['is_up'] = y
-        
+
+        df['interval'] = X['interval']
+        df['timestamp'] = X['timestamp']
+
         # Bin delta into 100 percentile bins using fixed percentile thresholds
         delta_values = df['delta'].dropna()
         if len(delta_values) > 0:
@@ -48,12 +52,21 @@ class BucketClassifier:
         # Fill NaN values
         df['delta_bin'] = df['delta_bin'].fillna(0).astype(int)
         df['seconds_left_bin'] = df['seconds_left_bin'].fillna(0).astype(int)
+
+        df_interval = (
+            df
+            .sort_values("timestamp")          # or seconds_left ascending
+            .groupby("interval", as_index=False)
+            .tail(1)
+        )
         
         # Group by (seconds_left_bin, delta_bin) and calculate mean is_up
-        grouped = df.groupby(['seconds_left_bin', 'delta_bin']).agg(
+        grouped = df_interval.groupby(['seconds_left_bin', 'delta_bin']).agg(
             count=('is_up', 'count'),
             mean=('is_up', 'mean'),
-        ).round(4)
+        )
+        
+        grouped = grouped.round(4)
         grouped = grouped.reset_index()
         self.table = grouped
         
@@ -134,10 +147,27 @@ class BucketClassifier:
         
         # Use indexed lookup for O(1) access
         key = (seconds_left_bin, delta_bin)
-        probability = self.table_index.get(key, 0.5)  # Default to 0.5 if not found
+        probability = self.table_index.get(key, bid)  # Default to bid if not found
         print(f"price: {price}, delta: {price - target}, seconds_left: {seconds_left}, bid: {bid}, ask: {ask}, probability: {probability}")
 
         return float(np.clip(probability, 0.0, 1.0))
+
+def show_pnl_by_interval(df):
+    df = df[(df['bid'] + SPREAD <= df['probability'])]
+    df['pnl'] = df['is_up'] - df['bid']
+    grouped = df.groupby('interval')['pnl'].agg(['sum', 'count'])
+
+    total_pnl = 0
+    volume = 0
+    num_intervals = 0
+    for interval, row in grouped.iterrows():
+        pnl = row['sum']
+        count = row['count']
+        print(f"Interval: {interval}, PnL: {pnl}, Count: {count}")
+        total_pnl += pnl
+        volume += count
+        num_intervals += 1
+    print(f"Total PnL: {total_pnl} volume {volume} pnl/volume {total_pnl/volume:.2f} num_intervals {num_intervals} pnl/interval {total_pnl/num_intervals:.2f}")
 
 def main():
     dataset = Dataset()
@@ -145,15 +175,13 @@ def main():
     test_df = dataset.test_df
 
     model = BucketClassifier()
-    model.fit(train_df[['delta', 'seconds_left']], train_df['label'])
+    # Include interval if available for unique counting
+    feature_cols = ['delta', 'seconds_left', 'interval', 'timestamp']
+    model.fit(train_df[feature_cols], train_df['label'])
 
-    prob = model.predict_proba(test_df[['delta', 'seconds_left']])
-    print(f"Predictions shape: {prob.shape}")
-    print(f"First 5 predictions: {prob[:5]}")
-    
-    # Test single prediction
-    test_prob = model.get_probability(87576.878879, 87628.002972, 60, 0.4, 0.41)
-    print(f"Single prediction: {test_prob}")
+    test_df['probability'] = model.predict_proba(test_df[['delta', 'seconds_left']])[:, 1]
+
+    show_pnl_by_interval(test_df)
 
 if __name__ == "__main__":
     main()
