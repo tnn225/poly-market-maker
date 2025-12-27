@@ -33,6 +33,10 @@ class SimpleOrder:
         self.spread = 0.01
         self.depth = 1
         self.max_collateral = 100
+        self.balance = 0
+
+    def set_balance(self, balance: float):
+        self.balance = balance
 
     def set_buy_prices(self, bid: float):
         self.buy_prices = []
@@ -45,7 +49,8 @@ class SimpleOrder:
     def set_sell_prices(self, ask: float):
         self.sell_prices = []
         for i in range(int(self.depth)):
-            price = min(round(1 - self.up - 0.01, 2), round(ask + i * self.delta, 2))
+            price = max(round(1 - self.up - 0.01, 2), round(ask + i * self.delta, 2))
+            # price = round(ask + i * self.delta, 2)
             if 0.01 <= price <= 0.99:
                 self.sell_prices.append(price)
 
@@ -65,19 +70,20 @@ class SimpleOrder:
         self.set_buy_prices(bid)
         print(f"  set_price {self.token} buy_prices={self.buy_prices} sell_prices={self.sell_prices} hedge_prices={self.hedge_prices}")
 
-    def get_sell_orders(self, balance):
+    def get_sell_orders(self):
+        balance = self.balance
         orders = []
         for price in self.sell_prices:
             if SIZE <= balance:
-                balance -= SIZE 
                 orders.append(
                     Order(
                         price=price,
                         side=Side.SELL,
                         token=self.token,
-                        size=SIZE,
+                        size=balance,
                     )
                 )
+                balance -= balance 
         return orders
 
     def get_buy_orders(self):
@@ -110,4 +116,4 @@ class SimpleOrder:
 
     def get_orders(self, seconds_left: int, price: float, delta: float, bid: float, ask: float, up: float):
         self.set_price(bid, ask, up)
-        return self.get_buy_orders()
+        return self.get_buy_orders() + self.get_sell_orders()

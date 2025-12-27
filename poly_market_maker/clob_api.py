@@ -3,7 +3,9 @@ import os
 import sys
 import time
 import requests
+import json
 
+from poly_market_maker.my_token import MyToken
 from poly_market_maker.market import Market
 from py_clob_client.client import ClobClient, ApiCreds, OrderArgs, OpenOrderParams
 from py_clob_client.exceptions import PolyApiException
@@ -214,7 +216,6 @@ class ClobApi:
                 
         return resp.json().get("conditionId")
 
-
     def get_market(self, timestamp: int):
         slug = f"btc-updown-15m-{timestamp}"
         print( f"Fetching market for slug: {slug}")
@@ -224,3 +225,58 @@ class ClobApi:
             condition_id,
             self.client.get_collateral_address(),
         )
+
+    def get_balances(self, market: Market):
+        params = {
+            "sizeThreshold": 1,
+            "limit": 100,
+            "sortBy": "TOKENS",
+            "sortDirection": "DESC",
+            "user": FUNDER,
+            "market": market.condition_id,
+        }
+        url = "https://data-api.polymarket.com/positions"
+        response = requests.get(url, params=params)
+
+        response.raise_for_status()
+
+        print(f"response.json(): {response.json()}")
+        positions = self._parse_positions(response.json())
+        print(f"positions: {positions}")
+        print(market.token_ids[MyToken.A], market.token_ids[MyToken.B])
+        balances = {
+            MyToken.A: positions.get(market.token_ids[MyToken.A]).get('size') if positions.get(market.token_ids[MyToken.A]) else 0,
+            MyToken.B: positions.get(market.token_ids[MyToken.B]).get('size') if positions.get(market.token_ids[MyToken.B]) else 0,
+        }
+        print(f"balances: {balances}")
+        return balances
+
+    def _parse_positions(self, positions: list) -> list:
+        """Parse and format position data."""
+
+        parsed = {}
+        for pos in positions:
+            asset_id = int(pos.get('asset'))
+            parsed[asset_id] = {
+                'outcome': pos.get('outcome'),
+                'size': float(pos.get('size')),
+                'avg_price': pos.get('avgPrice'),
+                'current_price': pos.get('curPrice'),
+                'initial_value': pos.get('initialValue'),
+                'current_value': pos.get('currentValue'),
+                'cash_pnl': pos.get('cashPnl'),
+                'percent_pnl': pos.get('percentPnl'),
+                'slug': pos.get('slug'),
+                'title': pos.get('title'),
+                'end_date': pos.get('endDate'),
+            }
+        return parsed
+
+def main():
+    clob_api = ClobApi()
+    market = clob_api.get_market(1766836800)
+    positions = clob_api.get_balances(market)
+    print(f"Positions: {positions}")
+
+if __name__ == "__main__":
+    main()

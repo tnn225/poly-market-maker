@@ -68,7 +68,6 @@ class TradeManager:
         self.last_orders_time = 0
         self.orders = self.get_orders()
 
-    
     def trade(self, seconds_left: int):
         bid, ask = self.order_book_engine.get_bid_ask(MyToken.A)
 
@@ -76,7 +75,7 @@ class TradeManager:
             print(f"{seconds_left} Bid: {bid} Ask: {ask} - no bid or ask or both are 0")
             return
 
-        up = 0.50
+        up = 0.49
         down = 0.49
 
         orders_a = self.amm_a.get_orders(seconds_left, 0, 0, bid, ask, up)
@@ -155,9 +154,18 @@ class TradeManager:
             token=order_type.token,
         )
 
+    def get_balances(self) -> dict:
+        balances = self.clob_api.get_balances(self.market)
+        return balances 
+
     def get_orders(self) -> list[Order]:
         if time.time() - self.last_orders_time < 10:
             return self.orders
+        
+        self.balances = self.get_balances()
+        self.amm_a.set_balance(self.balances[MyToken.A])
+        self.amm_b.set_balance(self.balances[MyToken.B])
+
         self.last_orders_time = time.time()
         orders = self.clob_api.get_orders(self.market.condition_id)
         return [
@@ -185,6 +193,11 @@ class TradeManager:
             id=order_id,
             token=new_order.token,
         )
+
+    def cancel_all_buy_orders(self):
+        for order in self.orders:
+            if order.side == Side.BUY:
+                self.clob_api.cancel_order(order.id)
   
 def main():
     interval = 0 
@@ -194,11 +207,12 @@ def main():
     while True:
         time.sleep(0.1)
 
-        now = int(time.time()) + 900
+        now = int(time.time()) + 960
         seconds_left = 900 - (now % 900)
         if now // 900 * 900 > interval:  # 15-min intervals
             interval = now // 900 * 900
             if trade_manager is not None:
+                trade_manager.cancel_all_buy_orders()
                 trade_manager.order_book_engine.stop() 
 
             interval = now // 900 * 900
