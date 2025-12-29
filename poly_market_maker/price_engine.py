@@ -6,6 +6,7 @@ import json
 import time
 from datetime import datetime, timezone
 import logging
+from poly_market_maker.intervals import Interval
 
 logging.basicConfig(level=logging.INFO)
 
@@ -20,7 +21,19 @@ class PriceEngine(threading.Thread):
         self.price = None
         self.timestamp = None
 
+        intervals = Interval()
         self.target = None
+        while self.target is None:
+            time.sleep(1)
+            timestamp = int(time.time())
+            timestamp = timestamp // 900 * 900
+            data = intervals.get_data('BTC', timestamp)
+            print(f"Data: {data}")
+            if data is not None:
+                self.interval = data['interval']
+                self.target = data['openPrice']
+                print(f"Target: {self.target}")
+        
         self.interval = 0
         date = datetime.fromtimestamp(int(time.time()), tz=timezone.utc).strftime("%Y-%m-%d")
         filename = f'./data/price_{date}.csv'
@@ -96,7 +109,7 @@ class PriceEngine(threading.Thread):
             return
 
         with self.lock:
-            self.timestamp = ts / 1000
+            self.timestamp = round(ts / 1000)
             self.price = value
 
             if self.timestamp % 900 == 0:
@@ -178,10 +191,10 @@ if __name__ == "__main__":
     try:
         while True:
             timestamp = price_engine.get_timestamp()
-            price = price_engine.get_timestamp()
+            price = price_engine.get_price()
             interval = price_engine.get_interval()
             target = price_engine.get_target()
-            print(f"timestamp {timestamp} price {price} interval {interval} target {target} ")
+            print(f"timestamp {timestamp} price {price} target {target}")
             time.sleep(1)
 
     except KeyboardInterrupt:

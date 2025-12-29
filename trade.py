@@ -200,21 +200,28 @@ def main():
     while True:
         time.sleep(0.1)
 
-        timestamp = price_engine.get_timestamp()
-        price = price_engine.get_price()
         data = price_engine.get_data()
-        target = data.get('target')
-        
-        if timestamp is None or timestamp <= last:
+        if data is None:
+            print("No price data")
             continue
+
+        timestamp = data.get('timestamp')
+        price = data.get('price')
+        target = data.get('target')
+        if timestamp is None or price is None or target is None:
+            print("No timestamp, price, or target")
+            continue
+        delta = price - target
+
         last = timestamp
 
 
-        now = int(timestamp)
+        now = int(timestamp) + 10 # 10 seconds buffer
         seconds_left = 900 - (now % 900)
         if now // 900 * 900 > interval:  # 15-min intervals
             interval = now // 900 * 900
             if trade_manager is not None:
+                last_delta = delta
                 trade_manager.order_book_engine.stop() 
 
             interval = now // 900 * 900
