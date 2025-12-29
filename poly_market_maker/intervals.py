@@ -22,6 +22,7 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
+from poly_market_maker.binance import Binance
 
 import torch
 from torch import nn
@@ -31,7 +32,7 @@ import matplotlib.pyplot as plt
 from poly_market_maker.cache import KeyValueStore
 
 SPREAD = 0.01
-DAYS = 30
+DAYS = 2
 SECONDS_LEFT_BIN_SIZE = 15
 SECONDS_LEFT_BINS = int(900 / SECONDS_LEFT_BIN_SIZE)
 
@@ -46,14 +47,13 @@ FEATURE_COLS = ['interval', 'openPrice', 'closePrice']
 class Interval:
     def __init__(self, days=DAYS):
         self.days = days
-        self.session = requests.Session()
         self.cache = KeyValueStore()
 
-        # self._read_dates()
+        self.read_dates()
 
     def get_data(self, symbol: str, timestamp: int):
         """Get target price from Polymarket API."""
-        print(f"Getting data for {symbol} at {timestamp}")
+        # print(f"Getting data for {symbol} at {timestamp}")
         timestamp = timestamp // 900 * 900
 
         if self.cache.exists(timestamp):
@@ -75,7 +75,7 @@ class Interval:
             try:
                 print(f"Getting data from {url}")
 
-                response = self.session.get(url)
+                response = requests.get(url)
                 response.raise_for_status()
                 data = response.json()
                 interval_data = {
@@ -110,6 +110,7 @@ class Interval:
                     row = [data.get('interval'), data.get('openPrice'), data.get('closePrice')]
                     dataframes.append(row)
         self.df = pd.DataFrame(dataframes, columns=FEATURE_COLS)
+        self.df['is_up'] = self.df['closePrice'] >= self.df['openPrice']
         return self.df
 
 def show_delta_distribution(df):
@@ -168,13 +169,43 @@ def show_previous_delta_vs_is_up(df):
     plt.tight_layout()
     plt.show(block=True)  # Keep chart open until manually closed
 
+def check_binance(intervals):    
+    binance = Binance(symbol="BTCUSDT", interval="15m")
+
+    mismatches = []
+    for idx, row in intervals.df.iterrows():
+        timestamp = row['interval']
+        intervals_is_up = row['is_up']
+        
+        # Find matching row in binance.df (using open_time as timestamp)
+        binance_match = binance.df[binance.df['open_time'] == timestamp]
+        
+        if len(binance_match) > 0:
+            binance_is_up = binance_match.iloc[0]['is_up']
+            if intervals_is_up != binance_is_up:
+                mismatches.append({
+                    'timestamp': timestamp,
+                    'intervals_is_up': intervals_is_up,
+                    'binance_is_up': binance_is_up
+                })
     
+    print(f"\n{'='*60}")
+    print(f"Comparison Results: Intervals vs Binance")
+    print(f"{'='*60}")
+    print(f"Total rows checked: {len(intervals.df)}")
+    print(f"Mismatches found: {len(mismatches)}")
+    if mismatches:
+        print(f"\nMismatches:")
+        for m in mismatches[:10]:  # Show first 10
+            print(f"  Timestamp: {m['timestamp']}, Intervals: {m['intervals_is_up']}, Binance: {m['binance_is_up']}")
+        if len(mismatches) > 10:
+            print(f"  ... and {len(mismatches) - 10} more")
+    print(f"{'='*60}\n")
 
 def main():
     intervals = Interval()
-    timestamp = int(time.time())
-    data = intervals.get_data('BTC', timestamp)
-    print(f"Timestamp: {timestamp} Data: {data}")
+    check_binance(intervals)
+
 
 
     # df = intervals.df

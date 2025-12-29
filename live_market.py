@@ -31,9 +31,9 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 clob_api = ClobApi()
-
 price_engine = PriceEngine(symbol="btc/usd")
 price_engine.start()
+
 
 class OrderType:
     def __init__(self, order: Order):
@@ -59,6 +59,7 @@ class OrderType:
 class TradeManager:
     def __init__(self, interval: int):
         self.clob_api = clob_api
+        self.price_engine = price_engine
         self.market = clob_api.get_market(interval)
 
         self.strategy = SimpleStrategy()
@@ -71,18 +72,21 @@ class TradeManager:
         self.last_orders_time = 0
         self.orders = self.get_orders()
 
-    def trade(self, seconds_left: int, delta: float):
+    
+    def trade(self, seconds_left: int, price: float, target: float):
+        delta = price - target
         bid, ask = self.order_book_engine.get_bid_ask(MyToken.A)
 
         if bid is None or ask is None or (bid == 0 and ask == 0):
-            print(f"{seconds_left} delta {delta:+.2f} Bid: {bid} Ask: {ask} - no bid or ask or both are 0")
+            print(f"{seconds_left} {price:.4f} {delta:+.2f} Bid: {bid} Ask: {ask} - no bid or ask or both are 0")
             return
 
-        up = 0.49
-        down = 0.49
+        up = 0.5 if price >= target else 0
+        down = 0.5 if price <= target else 0
+        print(f"{seconds_left} {price:.4f} {delta:+.2f} Bid: {bid} Ask: {ask} Up: {up:.2f} Down: {down:.2f}")
 
-        orders_a = self.amm_a.get_orders(seconds_left, 0, 0, bid, ask, up) if delta < 0 else []
-        orders_b = self.amm_b.get_orders(seconds_left, 0, 0, round(1 - ask, 2), round(1 - bid, 2), down) if delta > 0 else []
+        orders_a = self.amm_a.get_orders(seconds_left, price, delta, bid, ask, up)
+        orders_b = self.amm_b.get_orders(seconds_left, target, -delta, round(1 - ask, 2), round(1 - bid, 2), down)
    
         print(f"  Orders_a: {orders_a} Orders_b: {orders_b}")
         orders = orders_a + orders_b
@@ -157,19 +161,10 @@ class TradeManager:
             token=order_type.token,
         )
 
-    def get_balances(self) -> dict:
-        balances = self.clob_api.get_balances(self.market)
-        return balances 
-
     def get_orders(self) -> list[Order]:
         if time.time() - self.last_orders_time < 10:
             return self.orders
-        
-        self.balances = self.get_balances()
-        self.amm_a.set_balance(self.balances[MyToken.A])
-        self.amm_b.set_balance(self.balances[MyToken.B])
         self.last_orders_time = time.time()
-        
         orders = self.clob_api.get_orders(self.market.condition_id)
         return [
             Order(
@@ -196,11 +191,6 @@ class TradeManager:
             id=order_id,
             token=new_order.token,
         )
-
-    def cancel_all_buy_orders(self, delta: float):
-        for order in self.orders:
-            if order.side == Side.BUY:
-                self.clob_api.cancel_order(order.id)
   
 def main():
     interval = 0 
@@ -208,32 +198,40 @@ def main():
     trade_manager = None
 
     while True:
-        time.sleep(1)
+        time.sleep(0.1)
 
         data = price_engine.get_data()
         if data is None:
             print("No price data")
             continue
 
+        timestamp = data.get('timestamp')
         price = data.get('price')
         target = data.get('target')
-        if price is None or target is None:
+        if timestamp is None or price is None or target is None:
+            print("No timestamp, price, or target")
             continue
         delta = price - target
 
+        last = timestamp
 
-        now = int(time.time()) + 910
+
+        now = int(timestamp) + 10 # 10 seconds buffer
         seconds_left = 900 - (now % 900)
         if now // 900 * 900 > interval:  # 15-min intervals
             interval = now // 900 * 900
             if trade_manager is not None:
-                trade_manager.cancel_all_buy_orders(delta)
+                last_delta = delta
                 trade_manager.order_book_engine.stop() 
 
             interval = now // 900 * 900
             trade_manager = TradeManager(interval)
 
-        trade_manager.trade(seconds_left, delta)
+        if target is None or data.get('interval') < interval:
+            print(f"{seconds_left} {price} - no target")
+            continue            
+
+        trade_manager.trade(seconds_left, price, target)
 
 if __name__ == "__main__":
     main()

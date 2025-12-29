@@ -49,7 +49,7 @@ class SimpleOrder:
     def set_sell_prices(self, ask: float):
         self.sell_prices = []
         for i in range(int(self.depth)):
-            price = max(round(self.up, 2), round(ask + i * self.delta, 2))
+            price = max(round(self.up+0.01, 2), round(ask + i * self.delta, 2))
             # price = round(ask + i * self.delta, 2)
             if 0.01 <= price <= 0.99:
                 self.sell_prices.append(price)
