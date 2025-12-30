@@ -16,8 +16,8 @@ from poly_market_maker.strategies.amm_strategy import AMMStrategy
 from poly_market_maker.strategies.bands_strategy import BandsStrategy
 
 from poly_market_maker.dataset import Dataset
-from poly_market_maker.bucket_classifier import BucketClassifier
-from poly_market_maker.delta_classifier import DeltaClassifier
+from poly_market_maker.models.bucket_classifier import BucketClassifier
+from poly_market_maker.models.delta_classifier import DeltaClassifier
 
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression

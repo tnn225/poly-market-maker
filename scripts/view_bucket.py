@@ -34,9 +34,9 @@ from sklearn.metrics import (
 
 from poly_market_maker.dataset import Dataset
 from poly_market_maker.models import Model
-from poly_market_maker.tensorflow_classifier import TensorflowClassifier
-from poly_market_maker.bucket_classifier import BucketClassifier
-from poly_market_maker.bid_classifier import BidClassifier
+from poly_market_maker.models.tensorflow_classifier import TensorflowClassifier
+from poly_market_maker.models.bucket_classifier import BucketClassifier
+from poly_market_maker.models.bid_classifier import BidClassifier
 
 SPREAD = 0.05
 logger = logging.getLogger(__name__)
@@ -65,6 +65,8 @@ def show_pnl_by_interval(df):
     print(f"Total PnL: {total_pnl} volume {volume} pnl/volume {total_pnl/volume:.2f} num_intervals {num_intervals} pnl/interval {total_pnl/num_intervals:.2f}")
 
 def main():
+
+    intervals = Interval()
     dataset = Dataset()
     df = dataset.df 
 

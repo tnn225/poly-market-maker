@@ -11,7 +11,7 @@ from poly_market_maker.orderbook import OrderBook
 from poly_market_maker.utils import math_round_down
 
 from poly_market_maker.models import Model
-from poly_market_maker.delta_classifier import DeltaClassifier
+from poly_market_maker.models.delta_classifier import DeltaClassifier
 
 SIZE = 5
 MAX_BALANCE = 150

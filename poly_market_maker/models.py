@@ -17,9 +17,9 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.calibration import CalibratedClassifierCV
 
 from poly_market_maker.dataset import Dataset
-from poly_market_maker.tensorflow_classifier import TensorflowClassifier
-from poly_market_maker.bucket_classifier import BucketClassifier
-from poly_market_maker.delta_classifier import DeltaClassifier
+from poly_market_maker.models.tensorflow_classifier import TensorflowClassifier
+from poly_market_maker.models.bucket_classifier import BucketClassifier
+from poly_market_maker.models.delta_classifier import DeltaClassifier
 
 import pickle
 import tensorflow as tf

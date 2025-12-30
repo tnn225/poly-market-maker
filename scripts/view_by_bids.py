@@ -34,9 +34,9 @@ from sklearn.metrics import (
 
 from poly_market_maker.dataset import Dataset
 from poly_market_maker.models import Model
-from poly_market_maker.tensorflow_classifier import TensorflowClassifier
-from poly_market_maker.bucket_classifier import BucketClassifier
-from poly_market_maker.bid_classifier import BidClassifier
+from poly_market_maker.models.tensorflow_classifier import TensorflowClassifier
+from poly_market_maker.models.bucket_classifier import BucketClassifier
+from poly_market_maker.models.bid_classifier import BidClassifier
 
 SPREAD = 0.05
 

@@ -31,7 +31,7 @@ from sklearn.metrics import (
 
 from poly_market_maker.dataset import Dataset
 from poly_market_maker.models import Model
-from poly_market_maker.tensorflow_classifier import TensorflowClassifier
+from poly_market_maker.models.tensorflow_classifier import TensorflowClassifier
 
 SPREAD = 0.05
 logger = logging.getLogger(__name__)

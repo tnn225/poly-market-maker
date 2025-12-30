@@ -22,17 +22,16 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
-from poly_market_maker.binance import Binance
 
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 import matplotlib.pyplot as plt
 
-from poly_market_maker.cache import KeyValueStore
+from poly_market_maker.utils.cache import KeyValueStore
 
 SPREAD = 0.01
-DAYS = 2
+DAYS = 7
 SECONDS_LEFT_BIN_SIZE = 15
 SECONDS_LEFT_BINS = int(900 / SECONDS_LEFT_BIN_SIZE)
 
@@ -47,17 +46,18 @@ FEATURE_COLS = ['interval', 'openPrice', 'closePrice']
 class Interval:
     def __init__(self, days=DAYS):
         self.days = days
-        self.cache = KeyValueStore()
-
+        self.cache = KeyValueStore(db_path="./data/intervals.sqlite")
         self.read_dates()
 
-    def get_data(self, symbol: str, timestamp: int):
+    def get_data(self, symbol: str, timestamp: int, only_cache=False):
         """Get target price from Polymarket API."""
         # print(f"Getting data for {symbol} at {timestamp}")
         timestamp = timestamp // 900 * 900
 
         if self.cache.exists(timestamp):
             return json.loads(self.cache.get(timestamp))
+        if only_cache:
+            return None
 
         # Fetch from API
         eventStartTime = datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -85,7 +85,8 @@ class Interval:
                     "completed": data.get('completed'),
                 }
                 # print(f"interval_data: {interval_data}")
-                self.cache.set(timestamp, json.dumps(interval_data))
+                if interval_data.get('completed'):
+                    self.cache.set(timestamp, json.dumps(interval_data))
                 return interval_data
             except Exception as e:
                 print(f"Error fetching target for timestamp {timestamp}: {e}")
@@ -110,6 +111,7 @@ class Interval:
                     row = [data.get('interval'), data.get('openPrice'), data.get('closePrice')]
                     dataframes.append(row)
         self.df = pd.DataFrame(dataframes, columns=FEATURE_COLS)
+        self.df['delta'] = self.df['closePrice'] - self.df['openPrice']
         self.df['is_up'] = self.df['closePrice'] >= self.df['openPrice']
         return self.df
 
@@ -169,48 +171,11 @@ def show_previous_delta_vs_is_up(df):
     plt.tight_layout()
     plt.show(block=True)  # Keep chart open until manually closed
 
-def check_binance(intervals):    
-    binance = Binance(symbol="BTCUSDT", interval="15m")
-
-    mismatches = []
-    for idx, row in intervals.df.iterrows():
-        timestamp = row['interval']
-        intervals_is_up = row['is_up']
-        
-        # Find matching row in binance.df (using open_time as timestamp)
-        binance_match = binance.df[binance.df['open_time'] == timestamp]
-        
-        if len(binance_match) > 0:
-            binance_is_up = binance_match.iloc[0]['is_up']
-            if intervals_is_up != binance_is_up:
-                mismatches.append({
-                    'timestamp': timestamp,
-                    'intervals_is_up': intervals_is_up,
-                    'binance_is_up': binance_is_up
-                })
-    
-    print(f"\n{'='*60}")
-    print(f"Comparison Results: Intervals vs Binance")
-    print(f"{'='*60}")
-    print(f"Total rows checked: {len(intervals.df)}")
-    print(f"Mismatches found: {len(mismatches)}")
-    if mismatches:
-        print(f"\nMismatches:")
-        for m in mismatches[:10]:  # Show first 10
-            print(f"  Timestamp: {m['timestamp']}, Intervals: {m['intervals_is_up']}, Binance: {m['binance_is_up']}")
-        if len(mismatches) > 10:
-            print(f"  ... and {len(mismatches) - 10} more")
-    print(f"{'='*60}\n")
-
 def main():
     intervals = Interval()
-    check_binance(intervals)
+    df = intervals.df
 
-
-
-    # df = intervals.df
-    # df['delta'] = df['closePrice'] - df['openPrice']
-    # show_previous_delta_vs_is_up(df)
+    show_delta_distribution(df)
 
 if __name__ == "__main__":
     main()
