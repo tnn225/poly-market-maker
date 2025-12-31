@@ -1,22 +1,17 @@
 import logging
 import os
-import sys
 import time
 import requests
-import json
 
 from poly_market_maker.my_token import MyToken
 from poly_market_maker.market import Market
 from py_clob_client.client import ClobClient, ApiCreds, OrderArgs, OpenOrderParams
 from py_clob_client.exceptions import PolyApiException
 
-from poly_market_maker.utils import randomize_default_price
 from poly_market_maker.constants import OK
 from poly_market_maker.metrics import clob_requests_latency
 
 DEFAULT_PRICE = 0.5
-
-from py_clob_client.client import ClobClient
 
 from dotenv import load_dotenv
 load_dotenv()

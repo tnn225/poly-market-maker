@@ -4,6 +4,8 @@ from typing import Any, Optional
 from contextlib import contextmanager
 import requests
 
+session = requests.Session()
+
 class KeyValueStore:
     """
     A simple key-value store backed by SQLite.
@@ -213,7 +215,7 @@ class KeyValueStore:
         url = self.get_key(base_url, params)
         if self.exists(url):
             return self.get(url)
-        resp = requests.get(url, timeout=30)
+        resp = session.get(url, timeout=30)
         resp.raise_for_status()
         data = resp.json()
         self.set(url, data)

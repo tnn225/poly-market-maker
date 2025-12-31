@@ -14,7 +14,6 @@ from poly_market_maker.utils import setup_logging
 from poly_market_maker.clob_api import ClobApi
 from poly_market_maker.order import Side
 from poly_market_maker.strategies.simple_order import SimpleOrder
-from poly_market_maker.strategies.simple_strategy import SimpleStrategy
 
 
 
@@ -62,7 +61,6 @@ class TradeManager:
         self.price_engine = price_engine
         self.market = clob_api.get_market(interval)
 
-        self.strategy = SimpleStrategy()
         self.order_book_engine = OrderBookEngine(self.market)
         self.order_book_engine.start()
 
@@ -81,12 +79,14 @@ class TradeManager:
             print(f"{seconds_left} {price:.4f} {delta:+.2f} Bid: {bid} Ask: {ask} - no bid or ask or both are 0")
             return
 
-        up = 0.5 if price >= target else 0
-        down = 0.5 if price <= target else 0
+        #up = 0.5 if price >= target else 0
+        #down = 0.5 if price <= target else 0
+        up = bid
+        down = round(1 - ask, 2)
         print(f"{seconds_left} {price:.4f} {delta:+.2f} Bid: {bid} Ask: {ask} Up: {up:.2f} Down: {down:.2f}")
 
-        orders_a = self.amm_a.get_orders(seconds_left, price, delta, bid, ask, up)
-        orders_b = self.amm_b.get_orders(seconds_left, target, -delta, round(1 - ask, 2), round(1 - bid, 2), down)
+        orders_a = self.amm_a.get_orders(seconds_left, price, delta, bid, ask, up) if delta > 0 else []
+        orders_b = self.amm_b.get_orders(seconds_left, target, -delta, round(1 - ask, 2), round(1 - bid, 2), down) if delta < 0 else [] 
    
         print(f"  Orders_a: {orders_a} Orders_b: {orders_b}")
         orders = orders_a + orders_b

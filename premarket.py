@@ -1,4 +1,3 @@
-import csv
 from datetime import datetime, timezone
 import logging
 import os  
@@ -21,6 +20,7 @@ from poly_market_maker.strategies.simple_strategy import SimpleStrategy
 from dotenv import load_dotenv          # Environment variable management
 load_dotenv()                           # Load environment variables from .env file
 
+MAX_SHARES = 100
 FUNDER = os.getenv("FUNDER")
 TARGET = os.getenv("TARGET")
 
@@ -71,6 +71,17 @@ class TradeManager:
         self.last_orders_time = 0
         self.orders = self.get_orders()
 
+    def get_up(self, delta: float):
+        if -1000 < delta <= -500:
+            return 0.55
+        if -500 < delta <= 0:
+            return 0.49
+        if 0 < delta <= 500:
+            return 0.51
+        if 500 < delta < 1000:
+            return 0.45
+        return None
+
     def trade(self, seconds_left: int, delta: float):
         bid, ask = self.order_book_engine.get_bid_ask(MyToken.A)
 
@@ -78,15 +89,24 @@ class TradeManager:
             print(f"{seconds_left} delta {delta:+.2f} Bid: {bid} Ask: {ask} - no bid or ask or both are 0")
             return
 
-        up = 0.49
-        down = 0.49
+        up = self.get_up(delta)
+        if up is None:
+            return
+        down = 1 - up
+
+        orders = [] 
 
         orders_a = self.amm_a.get_orders(seconds_left, 0, 0, bid, ask, up) if delta < 0 else []
         orders_b = self.amm_b.get_orders(seconds_left, 0, 0, round(1 - ask, 2), round(1 - bid, 2), down) if delta > 0 else []
    
-        print(f"  Orders_a: {orders_a} Orders_b: {orders_b}")
-        orders = orders_a + orders_b
+        shares = self.balances[MyToken.A] + self.balances[MyToken.B]
+        if shares < MAX_SHARES: 
+            orders = orders_a + orders_b
 
+        print(f"  Orders_a: {orders_a} Orders_b: {orders_b}")
+
+        # Force refresh orders to get latest state before calculating what to cancel/place
+        # self.last_orders_time = 0
         self.orders = self.get_orders()
         (orders_to_cancel, orders_to_place) = self.get_orders_to_cancel_and_place(orders)
         print(f"  Orders_to_cancel: {orders_to_cancel} Orders_to_place: {orders_to_place} Orders: {self.orders}")
@@ -133,8 +153,10 @@ class TradeManager:
                 if OrderType(order) == order_type
             )
 
-            # if open_size too big, cancel all orders of this type
-            if open_size > expected_size:
+            # Cancel all existing orders of this type if:
+            # 1. Total size doesn't match, OR
+            # 2. There are multiple orders (duplicates) - always consolidate to a single order
+            if open_size != expected_size or len(open_orders) > 1:
                 orders_to_cancel += open_orders
                 new_size = expected_size
             # otherwise get the remaining size

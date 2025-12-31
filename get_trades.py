@@ -8,7 +8,7 @@ from py_clob_client.clob_types import TradeParams
 from poly_market_maker.my_token import MyToken
 
 # ---------------- CONFIG ----------------
-ADDRESS = "0x5248313731287b61d714ab9df655442d6ed28aa2"
+ADDRESS = "0x6031b6eed1c97e853c6e0f03ad3ce3529351f96d"
 IS_MAKER = False    # True = maker trades, False = taker trades
 # ----------------------------------------
 
@@ -79,7 +79,7 @@ def fetch_trades(condition_ids: list, token_1):
     return trades
 
 def save_trades(interval: int, trades: list):
-    headers = ['timestamp', 'proxyWallet', 'token 1', 'price 1', 'token 2', 'price 2']
+    headers = ['timestamp', 'proxyWallet', 'outcome', 'price', 'size']
     trades = sorted(trades, key=lambda x: int(x['timestamp']))
 
     # File path

@@ -85,3 +85,4 @@ def add_randomness(price: float, lower: float, upper: float) -> float:
 
 def randomize_default_price(price: float) -> float:
     return add_randomness(price, -0.1, 0.1)
+
