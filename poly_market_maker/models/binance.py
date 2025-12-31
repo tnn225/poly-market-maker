@@ -13,17 +13,21 @@ import matplotlib.pyplot as plt
 
 BASE_URL = "https://api.binance.com/api/v3/klines"
 
-filename = "./data/binance_data.csv"
 
 class Binance:
     def __init__(self, symbol="BTCUSDT", interval="15m"):
         self.symbol = symbol
         self.interval = interval
-        self.df = self.fetch(start_time=datetime.now(timezone.utc) - timedelta(days=365), end_time=datetime.now(timezone.utc))
+        date = "2025-12-16"
+        start_time = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        end_time = start_time + timedelta(days=1)
+        # self.df = self.fetch(start_time=datetime.now(timezone.utc) - timedelta(days=365), end_time=datetime.now(timezone.utc))
+        self.df = self.fetch(start_time=start_time, end_time=end_time)
         self.df = self._add_features(self.df)
 
     def fetch(self, start_time=None, end_time=None, limit=1000, sleep=0.2):
         """Fetch klines data. Returns DataFrame with ~35K rows for 1 year at 15m intervals."""
+        filename = f"./data/binance_{self.symbol}_{self.interval}.csv"
         # Load from file if it exists
         if os.path.exists(filename):
             print(f"Loading data from {filename}")
@@ -150,6 +154,8 @@ class Binance:
         df['ret_vol_interaction'] = df['ret_1'] * df['vol_z']
         df['wick_balance'] = df['upper_wick_pct'] - df['lower_wick_pct']  # Net wick direction
         
+        df['delta'] = df['close'] - df['open']
+        df['previous_delta'] = df['delta'].shift(1)
         df['is_up'] = (df['close'] >= df['open']).astype(int)
         df['label'] = (df['close'].shift(-1) >= df['open'].shift(-1)).astype(int)
         return df
@@ -215,7 +221,9 @@ def evaluate(test_df, label_column: str = 'label', probability_column: str = 'pr
 
     return test_df
 
-def main():
+
+
+def model_binance():
     binance = Binance(symbol="BTCUSDT", interval="15m")
     
     train_df, test_df = binance.train_test_split()
@@ -253,31 +261,69 @@ def main():
         'body_vol_interaction',  # body_pct * vol_ratio
         'ret_vol_interaction',   # ret_1 * vol_z
     ]
+    feature_cols = ['delta']
 
     model.fit(train_df[feature_cols], train_df['label'])
     test_df['probability'] = model.predict_proba(test_df[feature_cols])[:, 1]
-    
-    # Plot stacked histogram of probabilities by label
+
+    evaluate(test_df, probability_column='probability')
+
+def visualize_binance(df):
     plt.figure(figsize=(10, 6))
-    
-    # Separate probabilities by label
-    prob_label_0 = test_df[test_df['label'] == 0]['probability'].dropna()
-    prob_label_1 = test_df[test_df['label'] == 1]['probability'].dropna()
-    
-    # Create stacked histogram
-    plt.hist([prob_label_0, prob_label_1], bins=50, stacked=False, 
-             color=['red', 'green'], alpha=0.7, edgecolor='black',
-             label=['Label=0 (Red)', 'Label=1 (Green)'])
-    
-    plt.axvline(x=0.5, color='blue', linestyle='--', linewidth=2, label='Threshold 0.5')
-    plt.xlabel('Probability', fontsize=12)
-    plt.ylabel('Frequency', fontsize=12)
-    plt.title('Distribution of Predicted Probabilities by Label (Test Set)', fontsize=14)
-    plt.legend()
-    plt.grid(True, alpha=0.3, axis='y')
-    plt.tight_layout()
+    plt.scatter(df['delta'], df['previous_delta'])
+    plt.xlabel('Delta')
+    plt.ylabel('Previous Delta')
+    plt.title('Delta vs Previous Delta')
     plt.show(block=True)
 
+def view_bins(df):
+    """Plot previous_delta_bin vs is_up mean"""
+    df = df.sort_values('open_time')
+    
+    # Remove rows with NaN previous_delta or is_up
+    df = df.dropna(subset=['previous_delta', 'is_up'])
+    
+    # Create buckets for previous_delta using custom bins
+    bins = [-5000, -1000, -500, 0, 500, 1000, 5000]
+    df['previous_delta_bin'] = pd.cut(df['previous_delta'], bins=bins, labels=False, include_lowest=True)
+    
+    # Calculate mean is_up for each bucket
+    bucket_stats = df.groupby('previous_delta_bin').agg({
+        'previous_delta': 'mean',  # Use mean of previous_delta as bucket center
+        'is_up': ['mean', 'count']  # Mean and count of is_up
+    })
+    bucket_stats.columns = ['previous_delta_mean', 'is_up_mean', 'count']
+    bucket_stats = bucket_stats.reset_index()
+    
+    # Remove buckets with too few samples
+    bucket_stats = bucket_stats[bucket_stats['count'] > 0]
+    
+    # Create subplots: one for mean is_up, one for count
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 10), sharex=True)
+    
+    # Top plot: Dot plot of mean is_up
+    ax1.scatter(bucket_stats['previous_delta_mean'], bucket_stats['is_up_mean'], 
+                s=50, alpha=0.7, color='blue')
+    ax1.set_ylabel('Mean is_up')
+    ax1.set_title('Mean is_up by Previous Delta Buckets (Binance)')
+    ax1.grid(True, alpha=0.3)
+    
+    # Bottom plot: Bar chart of count
+    ax2.bar(bucket_stats['previous_delta_mean'], bucket_stats['count'], 
+            width=(bucket_stats['previous_delta_mean'].max() - bucket_stats['previous_delta_mean'].min()) / len(bucket_stats) * 0.8,
+            alpha=0.7, color='green')
+    ax2.set_xlabel('Previous Delta (bucket center)')
+    ax2.set_ylabel('Count')
+    ax2.set_title('Count by Previous Delta Buckets')
+    ax2.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.show(block=True)  # Keep chart open until manually closed
+
+def main():
+    binance = Binance(symbol="BTCUSDT", interval="15m")
+    df = binance.df
+    view_bins(df)
 
 if __name__ == "__main__":
     main()

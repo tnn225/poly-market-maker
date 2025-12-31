@@ -22,10 +22,13 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
+from poly_market_maker.models.binance import Binance
 
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
+
+import matplotlib.pyplot as plt
 
 SPREAD = 0.01
 DAYS = 30
@@ -64,11 +67,12 @@ class Dataset:
 
     def _read_dates(self):
         today = datetime.now()
-        dates = [(today - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(self.days)]
+        # dates = [(today - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(self.days)]
+        dates = ["2025-12-16"]
         # Load data from CSV files for each date
         dataframes = []
         for date in dates:
-            if os.path.exists(f"./data/price_{date}.csv"):
+            if os.path.exists(f"./data/prices/price_{date}.csv"):
                 df = self._read_rows(date)
                 print(f"date: {date}, df shape: {df.shape}")
                 if df is not None and not df.empty:
@@ -87,7 +91,7 @@ class Dataset:
 
 
     def _read_rows(self, date):
-        path = f"./data/price_{date}.csv"
+        path = f"./data/prices/price_{date}.csv"
         if not os.path.exists(path):
             logger.warning(f"File not found: {path}")
             return None
@@ -138,7 +142,7 @@ class Dataset:
         # Create price lookup dictionary for O(1) access
         price_dict = dict(zip(self.df['timestamp'], self.df['price']))
         for interval in self.df['interval'].unique():
-            data = self.intervals.get_data('BTC', interval)
+            data = self.intervals.get_data('BTC', interval, only_cache=True)
             if data:
                 price_dict[interval] = data['openPrice']
                 price_dict[interval + 900] = data['closePrice']
@@ -295,12 +299,128 @@ class Dataset:
             'confusion_matrix': cm.tolist(),
         }
 
+def view_delta_binance_and_dataset(binance_df, dataset_df):
+    """Match Binance and dataset by timestamp and plot delta vs delta"""
+    binance_df = binance_df.sort_values('open_time').copy()
+    print(f"binance_df: {len(binance_df)}")
+    dataset_df = dataset_df.sort_values('timestamp').copy()
+    print(f"dataset_df: {len(dataset_df)}")
+    
+    # Create a mapping from open_time to delta in binance_df
+    binance_dict = dict(zip(binance_df['open_time'], binance_df['delta']))
+    print(f"binance_dict: {len(binance_dict)}")
+    
+    # Match dataset_df['timestamp'] with binance_df['open_time'] and add binance_delta
+    dataset_df['binance_delta'] = dataset_df['timestamp'].map(binance_dict)
+    
+    # Remove rows where we couldn't find a match
+    dataset_df = dataset_df.dropna(subset=['delta', 'binance_delta'])
+    print(f"matched rows: {len(dataset_df)}")
+    
+    # Find indices where binance_delta < -50 or > 50
+    extreme_indices = dataset_df[(dataset_df['binance_delta'] < -50) | (dataset_df['binance_delta'] > 50)].index.tolist()
+    print(f"found {len(extreme_indices)} extreme points (binance_delta < -50 or > 50)")
+    
+    # Only show the first extreme range (100 points around first extreme point)
+    if len(extreme_indices) > 0:
+        first_extreme_idx = extreme_indices[0]
+        pos = dataset_df.index.get_loc(first_extreme_idx)
+        start = max(0, pos - 50)
+        end = min(len(dataset_df), pos + 50)
+        dataset_df = dataset_df.iloc[start:end].sort_values('timestamp')
+        print(f"showing {len(dataset_df)} points around first extreme point at position {pos}")
+    else:
+        print("no extreme points found, showing first 300 points")
+        if len(dataset_df) > 300:
+            dataset_df = dataset_df.head(300)
+    
+    # Create subplots: delta plot on top, bid plot on bottom
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
+    
+    # Top plot: timestamp on x-axis with delta and binance_delta as two lines
+    ax1.plot(dataset_df['timestamp'], dataset_df['delta'], alpha=0.7, label='Dataset Delta', linewidth=1)
+    ax1.plot(dataset_df['timestamp'], dataset_df['binance_delta'], alpha=0.7, label='Binance Delta', linewidth=1)
+    # Mark extreme points
+    extreme_df = dataset_df[(dataset_df['binance_delta'] < -50) | (dataset_df['binance_delta'] > 50)]
+    if len(extreme_df) > 0:
+        ax1.scatter(extreme_df['timestamp'], extreme_df['binance_delta'], color='red', s=50, alpha=0.8, label='Extreme Points', zorder=5)
+    ax1.set_ylabel('Delta')
+    ax1.set_title('Dataset Delta vs Binance Delta Over Time (Around Extreme Points)')
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+    
+    # Bottom plot: bid vs timestamp
+    ax2.plot(dataset_df['timestamp'], dataset_df['bid'], alpha=0.7, label='Bid', linewidth=1, color='green')
+    ax2.set_xlabel('Timestamp')
+    ax2.set_ylabel('Bid')
+    ax2.set_title('Bid Over Time')
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.show(block=True)
+    
+    return binance_df, dataset_df
 
+def view_price_binance_and_dataset(binance_df, dataset_df):
+    """Match Binance and dataset by timestamp and plot close price vs price"""
+    binance_df = binance_df.sort_values('open_time').copy()
+    print(f"binance_df: {len(binance_df)}")
+    dataset_df = dataset_df.sort_values('timestamp').copy()
+    print(f"dataset_df: {len(dataset_df)}")
+    
+    # Create a mapping from open_time to close price in binance_df
+    binance_dict = dict(zip(binance_df['open_time'], binance_df['close']))
+    print(f"binance_dict: {len(binance_dict)}")
+    # Match dataset_df['timestamp'] with binance_df['open_time'] and add binance_close
+    dataset_df['binance_close'] = dataset_df['timestamp'].map(binance_dict)
+
+    
+    # Remove rows where we couldn't find a match
+    dataset_df = dataset_df.dropna(subset=['price', 'binance_close'])
+    print(f"matched rows: {len(dataset_df)}")
+    
+    # Limit to first 300 points for plotting
+    if len(dataset_df) > 300:
+        dataset_df = dataset_df.head(300)
+        print(f"limited to first 300 points for plotting")
+    
+    # Create subplots: price plot on top, bid plot on bottom
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
+    
+    # Top plot: timestamp on x-axis with price and binance_close as two lines
+    ax1.plot(dataset_df['timestamp'], dataset_df['price'], alpha=0.7, label='Dataset Price', linewidth=1)
+    ax1.plot(dataset_df['timestamp'], dataset_df['binance_close'], alpha=0.7, label='Binance Close', linewidth=1)
+    ax1.set_ylabel('Price')
+    ax1.set_title('Dataset Price vs Binance Close Price Over Time')
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+    
+    # Bottom plot: bid vs timestamp
+    ax2.plot(dataset_df['timestamp'], dataset_df['bid'], alpha=0.7, label='Bid', linewidth=1, color='green')
+    ax2.set_xlabel('Timestamp')
+    ax2.set_ylabel('Bid')
+    ax2.set_title('Bid Over Time')
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.show(block=True)
+    
+    return binance_df, dataset_df
+
+    
+  
+ 
 def main():
     dataset = Dataset()
-    # train_df = dataset.train_df
-    # test_df = dataset.test_df
-    dataset.show()
+    df = dataset.df
+    df['delta'] = df['price'] - df['price'].shift(1)
+    binance = Binance(symbol="BTCUSDT", interval="1s")
+    binance_df = binance.df
+    binance_df['delta'] = binance_df['close'] - binance_df['close'].shift(1)
+
+    view_delta_binance_and_dataset(binance_df, df)
 
 
     return 

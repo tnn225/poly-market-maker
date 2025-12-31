@@ -29,9 +29,9 @@ from torch.utils.data import DataLoader, TensorDataset
 import matplotlib.pyplot as plt
 
 from poly_market_maker.utils.cache import KeyValueStore
-
+from poly_market_maker.models.binance import Binance
 SPREAD = 0.01
-DAYS = 7
+DAYS = 20
 SECONDS_LEFT_BIN_SIZE = 15
 SECONDS_LEFT_BINS = int(900 / SECONDS_LEFT_BIN_SIZE)
 
@@ -47,7 +47,7 @@ class Interval:
     def __init__(self, days=DAYS):
         self.days = days
         self.cache = KeyValueStore(db_path="./data/intervals.sqlite")
-        self.read_dates()
+        # self.read_dates()
 
     def get_data(self, symbol: str, timestamp: int, only_cache=False):
         """Get target price from Polymarket API."""
@@ -86,6 +86,7 @@ class Interval:
                 }
                 # print(f"interval_data: {interval_data}")
                 if interval_data.get('completed'):
+                    # print(f"Caching data for timestamp {timestamp}")
                     self.cache.set(timestamp, json.dumps(interval_data))
                 return interval_data
             except Exception as e:
@@ -100,7 +101,7 @@ class Interval:
 
     def read_dates(self):
         today = datetime.now()
-        dates = [(today - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(self.days)]
+        dates = [(today - timedelta(days=i+1)).strftime("%Y-%m-%d") for i in range(self.days)]
         # Load data from CSV files for each date
         dataframes = []
         for date in dates:
@@ -129,14 +130,13 @@ def show_delta_distribution(df):
 def show_previous_delta_vs_is_up(df):
     df = df.sort_values('interval')
     df['previous_delta'] = df['delta'].shift(1)
-    df['is_up'] = df['delta'] >= 0.0
     
     # Remove rows with NaN previous_delta
     df = df.dropna(subset=['previous_delta', 'is_up'])
     
-    # Create buckets for previous_delta using quantile-based bins
-    n_bins = 3
-    df['previous_delta_bucket'] = pd.qcut(df['previous_delta'], q=n_bins, labels=False, duplicates='drop')
+    # Create buckets for previous_delta using custom bins
+    bins = [-5000, -1000, -500, 0, 500, 1000,5000] # -1000 to -300, -300 to 0, 0 to 300, 300 to 1000
+    df['previous_delta_bucket'] = pd.cut(df['previous_delta'], bins=bins, labels=False, include_lowest=True)
     
     # Calculate mean is_up for each bucket
     bucket_stats = df.groupby('previous_delta_bucket').agg({
@@ -171,11 +171,64 @@ def show_previous_delta_vs_is_up(df):
     plt.tight_layout()
     plt.show(block=True)  # Keep chart open until manually closed
 
+def show_delta_vs_previous_delta(df):
+    df = df.sort_values('interval')
+    df['previous_delta'] = df['delta'].shift(1)
+    plt.figure(figsize=(10, 6))
+    plt.scatter(df['delta'], df['previous_delta'])
+    plt.xlabel('Delta')
+    plt.ylabel('Previous Delta')
+    plt.title('Delta vs Previous Delta')
+    plt.show(block=True)
+
+def view_delta_binance_and_intervals(binance_df, intervals_df):
+    """Match intervals with Binance data and plot delta vs binance_delta"""
+    binance_df = binance_df.sort_values('open_time').copy()
+    intervals_df = intervals_df.sort_values('interval').copy()
+    
+    # Calculate deltas
+    binance_df['delta'] = binance_df['close'] - binance_df['open']
+    intervals_df['delta'] = intervals_df['closePrice'] - intervals_df['openPrice']
+    
+    # Create a mapping from open_time to delta in binance_df
+    binance_dict = dict(zip(binance_df['open_time'], binance_df['delta']))
+    
+    # Match intervals_df['interval'] with binance_df['open_time'] and add binance_delta
+    intervals_df['binance_delta'] = intervals_df['interval'].map(binance_dict)
+    
+    # Remove rows where we couldn't find a match
+    intervals_df = intervals_df.dropna(subset=['delta', 'binance_delta'])
+    
+    # Plot delta vs binance_delta
+    plt.figure(figsize=(10, 6))
+    plt.scatter(intervals_df['delta'], intervals_df['binance_delta'], alpha=0.5, s=20)
+    plt.xlabel('Intervals Delta')
+    plt.ylabel('Binance Delta')
+    plt.title('Intervals Delta vs Binance Delta')
+    plt.grid(True, alpha=0.3)
+    
+    # Add diagonal line for reference
+    min_val = min(intervals_df['delta'].min(), intervals_df['binance_delta'].min())
+    max_val = max(intervals_df['delta'].max(), intervals_df['binance_delta'].max())
+    plt.plot([min_val, max_val], [min_val, max_val], 'r--', alpha=0.5, label='y=x')
+    plt.legend()
+    
+    plt.tight_layout()
+    plt.show(block=True)
+    
+    return binance_df, intervals_df
+
 def main():
     intervals = Interval()
-    df = intervals.df
+    intervals_df = intervals.df
 
-    show_delta_distribution(df)
+    binance = Binance(symbol="BTCUSDT", interval="15m")
+    binance_df = binance.df
+
+    view_delta_binance_and_intervals(binance_df, intervals_df)
+    
+    #show_delta_vs_previous_delta(intervals_df)
+    #show_previous_delta_vs_is_up(intervals_df)
 
 if __name__ == "__main__":
     main()
