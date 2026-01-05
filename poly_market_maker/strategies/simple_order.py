@@ -22,7 +22,7 @@ class SimpleOrder:
         self.p_max = 0.90
         self.delta = 0.01
         self.spread = 0.01
-        self.depth = 5
+        self.depth = 10
         self.max_collateral = 100
         self.balance = 0
         self.imbalance = 0

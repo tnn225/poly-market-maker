@@ -18,7 +18,7 @@ from poly_market_maker.strategies.simple_strategy import SimpleStrategy
 from dotenv import load_dotenv          # Environment variable management
 load_dotenv()                           # Load environment variables from .env file
 
-MAX_SHARES = 1000
+MAX_SHARES = 500
 FUNDER = os.getenv("FUNDER")
 TARGET = os.getenv("TARGET")
 
@@ -239,7 +239,7 @@ def main():
         delta = price - target
 
 
-        now = int(time.time()) # + 910
+        now = int(time.time()) + 310
         seconds_left = 900 - (now % 900)
         if now // 900 * 900 > interval:  # 15-min intervals
             interval = now // 900 * 900

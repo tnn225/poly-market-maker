@@ -15,12 +15,10 @@ from poly_market_maker.order import Side
 from poly_market_maker.strategies.simple_order import SimpleOrder
 from poly_market_maker.strategies.simple_strategy import SimpleStrategy
 
-
-
 from dotenv import load_dotenv          # Environment variable management
 load_dotenv()                           # Load environment variables from .env file
 
-MAX_SHARES = 100
+MAX_SHARES = 500
 FUNDER = os.getenv("FUNDER")
 TARGET = os.getenv("TARGET")
 
@@ -86,22 +84,15 @@ class TradeManager:
         orders_a = self.amm_a.get_orders(seconds_left, 0, 0, bid, ask, up)
         orders_b = self.amm_b.get_orders(seconds_left, 0, 0, round(1 - ask, 2), round(1 - bid, 2), down)
    
-        # Refresh balances (via get_orders) before deciding whether to place more orders.
-        self.orders = self.get_orders()
-        balance_a = float(self.balances.get(MyToken.A, 0))
-        balance_b = float(self.balances.get(MyToken.B, 0))
-        # In a binary market, "exposure" is better approximated by the larger side, not A+B.
-        exposure = max(balance_a, balance_b)
-        if exposure < MAX_SHARES:
+        shares = self.balances[MyToken.A] + self.balances[MyToken.B]
+        if shares < MAX_SHARES: 
             orders = orders_a + orders_b
-        else:
-            print(
-                f"  skipping new orders: exposure=max({balance_a:.2f},{balance_b:.2f})={exposure:.2f} >= MAX_SHARES={MAX_SHARES}"
-            )
 
         print(f"  Orders_a: {orders_a} Orders_b: {orders_b}")
 
-        # self.orders was refreshed above
+        # Force refresh orders to get latest state before calculating what to cancel/place
+        # self.last_orders_time = 0
+        self.orders = self.get_orders()
         (orders_to_cancel, orders_to_place) = self.get_orders_to_cancel_and_place(orders)
         print(f"  Orders_to_cancel: {orders_to_cancel} Orders_to_place: {orders_to_place} Orders: {self.orders}")
 
@@ -112,15 +103,23 @@ class TradeManager:
             self.orders = self.get_orders()
 
     def cancel_orders(self, orders: list[Order]) -> list[Order]:
-        for order in orders:
-            self.clob_api.cancel_order(order.id)
+        order_ids = [order.id for order in orders]
+        self.clob_api.cancel_orders(order_ids)
         return orders
 
     def place_orders(self, orders: list[Order]) -> list[Order]:
-        ret = [] 
-        for order in orders:
-            ret.append(self.place_order(order))
-        return ret 
+        # `py_clob_client` in this repo doesn't support PostOrdersArgs/batch posting.
+        # Our `ClobApi.post_orders()` accepts dicts and posts one-by-one.
+        orders_to_place = [
+            {
+                "price": order.price,
+                "size": order.size,
+                "side": order.side.value,
+                "token_id": self.market.token_id(order.token),
+            }
+            for order in orders
+        ]
+        self.clob_api.post_orders(orders_to_place)
 
     def get_orders_to_cancel_and_place(self, expected_orders: list[Order]) -> list[Order]:
         orders_to_cancel, orders_to_place = [], []
