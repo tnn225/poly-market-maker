@@ -1,22 +1,9 @@
 import logging
-import time
-
-import numpy as np
 from math import sqrt
-from unicodedata import bidirectional
 
-from poly_market_maker.my_token import MyToken, Collateral
+from poly_market_maker.token import Token, Collateral
 from poly_market_maker.order import Order, Side
-from poly_market_maker.orderbook import OrderBook
 from poly_market_maker.utils import math_round_down
-
-from poly_market_maker.models import Model
-from poly_market_maker.models.delta_classifier import DeltaClassifier
-
-SIZE = 5
-MAX_BALANCE = 150
-MAX_IMBALANCE = 50
-MAX_HEDGE_IMBALANCE = 50
 
 
 class AMMConfig:
@@ -26,13 +13,13 @@ class AMMConfig:
         p_max: float,
         spread: float,
         delta: float,
-        depth: int,
+        depth: float,
         max_collateral: float,
     ):
         assert isinstance(p_min, float)
         assert isinstance(p_max, float)
         assert isinstance(delta, float)
-        assert isinstance(depth, int)
+        assert isinstance(depth, float)
         assert isinstance(spread, float)
         assert isinstance(max_collateral, float)
 
@@ -45,13 +32,14 @@ class AMMConfig:
 
 
 class AMM:
-    def __init__(self, token: MyToken, config: AMMConfig):
+    def __init__(self, token: Token, config: AMMConfig):
         self.logger = logging.getLogger(self.__class__.__name__)
 
-        assert isinstance(token, MyToken)
+        assert isinstance(token, Token)
 
-        # if config.spread >= config.depth:
-        #    raise Exception("Depth does not exceed spread.")
+        if config.spread >= config.depth:
+            raise Exception("Depth does not exceed spread.")
+
         self.token = token
         self.p_min = config.p_min
         self.p_max = config.p_max
@@ -60,127 +48,144 @@ class AMM:
         self.depth = config.depth
         self.max_collateral = config.max_collateral
 
-    def set_buy_prices(self, bid: float):
+    def set_price(self, p_i: float):
+        self.p_i = p_i
+        self.p_u = round(min(p_i + self.depth, self.p_max), 2)
+        self.p_l = round(max(p_i - self.depth, self.p_min), 2)
+
         self.buy_prices = []
-        for i in range(int(self.depth)):
-            price = min(round(bid - i * self.delta, 2), 0.49)
-            if self.p_min <= price <= self.p_max and price <= self.up - self.spread:
-                self.buy_prices.append(price)
+        price = round(self.p_i - self.spread, 2)
+        while price >= self.p_l:
+            self.buy_prices.append(price)
+            price = round(price - self.delta, 2)
 
-    def set_sell_prices(self, ask: float):
         self.sell_prices = []
-        for i in range(int(self.depth)):
-            price = round(ask + i * self.delta, 2)
-            if 0.01 <= price <= 0.99 and price >= self.up + self.spread:
-                self.sell_prices.append(price)
+        price = round(self.p_i + self.spread, 2)
+        while price <= self.p_u:
+            self.sell_prices.append(price)
+            price = round(price + self.delta, 2)
 
-    def set_hedge_prices(self):
-        self.hedge_prices = []
-        for i in range(int(self.depth)):
-            price = round(0.01 + i * self.depth, 2)
-            if 0.01 <= price <= 0.1:
-                self.hedge_prices.append(price)
+    def get_sell_orders(self, x):
+        sizes = [
+            # round down to avoid too large orders
+            math_round_down(size, 2)
+            for size in self.diff([self.sell_size(x, p_t) for p_t in self.sell_prices])
+        ]
 
-    def set_price(self, bid: float, ask: float, up: float):
-        self.up = up
-        self.bid = bid 
-        self.ask = ask 
-        self.set_sell_prices(ask)
-        self.set_hedge_prices()
-        self.set_buy_prices(bid)
-        
-        logging.info(f"set_price bid={bid}, ask={ask}, up={up}, buy_prices={self.buy_prices} sell_prices={self.sell_prices} hedge_prices={self.hedge_prices}")
+        orders = [
+            Order(
+                price=price,
+                side=Side.SELL,
+                token=self.token,
+                size=size,
+            )
+            for (price, size) in zip(self.sell_prices, sizes)
+        ]
 
-    def get_sell_orders(self, balance):
-        orders = []
-        for price in self.sell_prices:
-            if SIZE <= balance:
-                balance -= SIZE 
-                orders.append(
-                    Order(
-                        price=price,
-                        side=Side.SELL,
-                        token=self.token,
-                        size=SIZE,
-                    )
-                )
         return orders
 
-    def get_buy_orders(self):
-        """Return buy orders with fixed capital per level"""
+    def get_buy_orders(self, y):
+        sizes = [
+            # round down to avoid too large orders
+            math_round_down(size, 2)
+            for size in self.diff([self.buy_size(y, p_t) for p_t in self.buy_prices])
+        ]
+
         orders = [
             Order(
                 price=price,
                 side=Side.BUY,
                 token=self.token,
-                # size=math_round_down(CAPITAL / bid, 2),  
-                size = SIZE
+                size=size,
             )
-            for price in self.buy_prices
+            for (price, size) in zip(self.buy_prices, sizes)
         ]
+
         return orders
 
-    def get_hedge_orders(self):
-        """Return buy orders with fixed capital per level"""
-        orders = [
-            Order(
-                price=price,
-                side=Side.BUY,
-                token=self.token,
-                # size=math_round_down(CAPITAL / bid, 2),  
-                size = 1 / price 
-            )
-            for price in self.hedge_prices
-        ]
-        return orders
+    def phi(self):
+        return (1 / (sqrt(self.p_i) - sqrt(self.p_l))) * (
+            1 / sqrt(self.buy_prices[0]) - 1 / sqrt(self.p_i)
+        )
+
+    def sell_size(self, x, p_t):
+        return self._sell_size(x, self.p_i, p_t, self.p_u)
+
+    @staticmethod
+    def _sell_size(x, p_i, p_t, p_u):
+        L = x / (1 / sqrt(p_i) - 1 / sqrt(p_u))
+        a = L / sqrt(p_u) - L / sqrt(p_t) + x
+        return a
+
+    def buy_size(self, y, p_t):
+        return self._buy_size(y, self.p_i, p_t, self.p_l)
+
+    @staticmethod
+    def _buy_size(y, p_i, p_t, p_l):
+        L = y / (sqrt(p_i) - sqrt(p_l))
+        a = L * (1 / sqrt(p_t) - 1 / sqrt(p_i))
+        return a
+
+    @staticmethod
+    def diff(arr: list[float]) -> list[float]:
+        return [arr[i] if i == 0 else arr[i] - arr[i - 1] for i in range(len(arr))]
+
 
 class AMMManager:
     def __init__(self, config: AMMConfig):
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.amm_a = AMM(token=MyToken.A, config=config)
-        self.amm_b = AMM(token=MyToken.B, config=config)
+        self.amm_a = AMM(token=Token.A, config=config)
+        self.amm_b = AMM(token=Token.B, config=config)
         self.max_collateral = config.max_collateral
-        self.p_max = config.p_max
-        self.spread = config.spread
-        feature_cols = ['delta', 'percent', 'log_return', 'time', 'seconds_left', 'bid', 'ask']
-        self.model = Model(f"DeltaClassifier", DeltaClassifier(), feature_cols=feature_cols)
-        self._last_balance_time = 0
 
-    def get_expected_orders(self, price: float, target: float, orderbook: OrderBook, bid: float, ask: float, seconds_left: int):
-        delta = price - target
-        self.logger.debug(f"get_expected_orders seconds_left={seconds_left} price={price} {delta:+.2f}, bid={bid:.2f}, ask={ask:.2f}")
-        orders = []
-        bid = round(bid, 2)
-        ask = round(ask, 2)
+    def get_expected_orders(
+        self,
+        target_prices,
+        balances,
+    ):
+        self.amm_a.set_price(target_prices[Token.A])
+        self.amm_b.set_price(target_prices[Token.B])
 
-        open_orders = orderbook.orders
-        balances = orderbook.balances
+        sell_orders_a = self.amm_a.get_sell_orders(balances[Token.A])
+        sell_orders_b = self.amm_b.get_sell_orders(balances[Token.B])
 
-        # get balances every 30 seconds
-        current_time = time.time()
-        if (current_time - self._last_balance_time) >= 60:
-            self.max_balance = balances[MyToken.A] + balances[MyToken.B] + 5
-            self._last_balance_time = current_time
+        best_sell_order_size_a = sell_orders_a[0].size if len(sell_orders_a) > 0 else 0
+        best_sell_order_size_b = sell_orders_b[0].size if len(sell_orders_b) > 0 else 0
 
-        up = 0.5 if price >= target else 0 # round(self.model.model.get_up(seconds_left, price - target, bid), 2)
-        down = 0.5 if price < target else 0 # round(self.model.model.get_up(seconds_left, target - price - 1e-10, round(1 - ask, 2)), 2)
-        # down = round(1 - up, 2)
+        total_collateral_allocation = min(balances[Collateral], self.max_collateral)
 
-        self.amm_a.set_price(bid, ask, up)
-        self.amm_b.set_price(round(1 - ask, 2), round(1 - bid, 2), down)
+        (collateral_allocation_a, collateral_allocation_b) = self.collateral_allocation(
+            total_collateral_allocation,
+            best_sell_order_size_a,
+            best_sell_order_size_b,
+        )
 
-        sell_orders_a = [] # self.amm_a.get_sell_orders(balances[MyToken.A])
-        sell_orders_b = [] # self.amm_b.get_sell_orders(balances[MyToken.B])
-        
-        if balances[MyToken.A] + balances[MyToken.B] <= self.max_balance:
-            buy_orders_a = self.amm_a.get_buy_orders()
-            buy_orders_b = self.amm_b.get_buy_orders()  
-            orders += buy_orders_a + buy_orders_b   
+        buy_orders_a = self.amm_a.get_buy_orders(collateral_allocation_a)
+        buy_orders_b = self.amm_b.get_buy_orders(collateral_allocation_b)
 
-        # if balances[MyToken.A] + balances[MyToken.B] > self.max_balance:
-        if False:
-            hedge_orders_a = self.amm_a.get_hedge_orders()  
-            hedge_orders_b = self.amm_b.get_hedge_orders()
-            orders += hedge_orders_a + hedge_orders_b
+        orders = sell_orders_a + sell_orders_b + buy_orders_a + buy_orders_b
 
         return orders
+
+    def collateral_allocation(
+        self,
+        collateral_balance: float,
+        best_sell_order_size_a: float,
+        best_sell_order_size_b: float,
+    ):
+        collateral_allocation_a = (
+            best_sell_order_size_a
+            - best_sell_order_size_b
+            + collateral_balance * self.amm_b.phi()
+        ) / (self.amm_a.phi() + self.amm_b.phi())
+
+        if collateral_allocation_a < 0:
+            collateral_allocation_a = 0
+        elif collateral_allocation_a > collateral_balance:
+            collateral_allocation_a = collateral_balance
+        collateral_allocation_b = collateral_balance - collateral_allocation_a
+
+        return (
+            math_round_down(collateral_allocation_a, 2),
+            math_round_down(collateral_allocation_b, 2),
+        )

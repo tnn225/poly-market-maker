@@ -21,6 +21,14 @@ class PriceEngine(threading.Thread):
         self.price = None
         self.timestamp = None
 
+        
+        self.interval = 0
+        date = datetime.fromtimestamp(int(time.time()), tz=timezone.utc).strftime("%Y-%m-%d")
+        filename = f'./data/price_{date}.csv'
+        if os.path.exists(filename):
+            self.read_prices(filename)
+
+        """
         intervals = Interval()
         self.target = None
         while self.target is None:
@@ -33,12 +41,7 @@ class PriceEngine(threading.Thread):
                 self.interval = data['interval']
                 self.target = data['openPrice']
                 print(f"Target: {self.target}")
-        
-        self.interval = 0
-        date = datetime.fromtimestamp(int(time.time()), tz=timezone.utc).strftime("%Y-%m-%d")
-        filename = f'./data/price_{date}.csv'
-        if os.path.exists(filename):
-            self.read_prices(filename)
+        """
 
         # Thread safety
         self.lock = threading.Lock()

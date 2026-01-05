@@ -12,14 +12,15 @@ FEATURE_COLS = ['interval', 'openPrice', 'closePrice']
 
 
 class Interval:
-    def __init__(self, days=DAYS):
+    def __init__(self, days=0):
         self.days = days
         self.cache = KeyValueStore(db_path="./data/intervals.sqlite")
-        self.read_dates()
+        if days > 0:
+            self.read_dates()
 
     def get_data(self, symbol: str, timestamp: int, only_cache=False):
         """Get target price from Polymarket API."""
-        # print(f"Getting data for {symbol} at {timestamp}")
+        print(f"Getting data for {symbol} at {timestamp}")
         timestamp = timestamp // 900 * 900
 
         if self.cache.exists(timestamp):

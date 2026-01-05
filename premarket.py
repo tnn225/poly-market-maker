@@ -71,17 +71,6 @@ class TradeManager:
         self.last_orders_time = 0
         self.orders = self.get_orders()
 
-    def get_up(self, delta: float):
-        if -1000 < delta <= -500:
-            return 0.55
-        if -500 < delta <= 0:
-            return 0.49
-        if 0 < delta <= 500:
-            return 0.51
-        if 500 < delta < 1000:
-            return 0.45
-        return None
-
     def trade(self, seconds_left: int, delta: float):
         bid, ask = self.order_book_engine.get_bid_ask(MyToken.A)
 
@@ -89,25 +78,30 @@ class TradeManager:
             print(f"{seconds_left} delta {delta:+.2f} Bid: {bid} Ask: {ask} - no bid or ask or both are 0")
             return
 
-        up = self.get_up(delta)
-        if up is None:
-            return
-        down = 1 - up
+        up = bid
+        down = round(1 - ask, 2)
 
         orders = [] 
 
-        orders_a = self.amm_a.get_orders(seconds_left, 0, 0, bid, ask, up) if delta < 0 else []
-        orders_b = self.amm_b.get_orders(seconds_left, 0, 0, round(1 - ask, 2), round(1 - bid, 2), down) if delta > 0 else []
+        orders_a = self.amm_a.get_orders(seconds_left, 0, 0, bid, ask, up)
+        orders_b = self.amm_b.get_orders(seconds_left, 0, 0, round(1 - ask, 2), round(1 - bid, 2), down)
    
-        shares = self.balances[MyToken.A] + self.balances[MyToken.B]
-        if shares < MAX_SHARES: 
+        # Refresh balances (via get_orders) before deciding whether to place more orders.
+        self.orders = self.get_orders()
+        balance_a = float(self.balances.get(MyToken.A, 0))
+        balance_b = float(self.balances.get(MyToken.B, 0))
+        # In a binary market, "exposure" is better approximated by the larger side, not A+B.
+        exposure = max(balance_a, balance_b)
+        if exposure < MAX_SHARES:
             orders = orders_a + orders_b
+        else:
+            print(
+                f"  skipping new orders: exposure=max({balance_a:.2f},{balance_b:.2f})={exposure:.2f} >= MAX_SHARES={MAX_SHARES}"
+            )
 
         print(f"  Orders_a: {orders_a} Orders_b: {orders_b}")
 
-        # Force refresh orders to get latest state before calculating what to cancel/place
-        # self.last_orders_time = 0
-        self.orders = self.get_orders()
+        # self.orders was refreshed above
         (orders_to_cancel, orders_to_place) = self.get_orders_to_cancel_and_place(orders)
         print(f"  Orders_to_cancel: {orders_to_cancel} Orders_to_place: {orders_to_place} Orders: {self.orders}")
 
@@ -190,6 +184,8 @@ class TradeManager:
         self.balances = self.get_balances()
         self.amm_a.set_balance(self.balances[MyToken.A])
         self.amm_b.set_balance(self.balances[MyToken.B])
+        self.amm_a.set_imbalance(self.balances[MyToken.A] - self.balances[MyToken.B])
+        self.amm_b.set_imbalance(self.balances[MyToken.B] - self.balances[MyToken.A])
         self.last_orders_time = time.time()
         
         orders = self.clob_api.get_orders(self.market.condition_id)

@@ -1,4 +1,3 @@
-import csv
 from datetime import datetime, timezone
 import logging
 import os  
@@ -14,12 +13,12 @@ from poly_market_maker.utils import setup_logging
 from poly_market_maker.clob_api import ClobApi
 from poly_market_maker.order import Side
 from poly_market_maker.strategies.simple_order import SimpleOrder
-
-
+from poly_market_maker.strategies.simple_strategy import SimpleStrategy
 
 from dotenv import load_dotenv          # Environment variable management
 load_dotenv()                           # Load environment variables from .env file
 
+MAX_SHARES = 1000
 FUNDER = os.getenv("FUNDER")
 TARGET = os.getenv("TARGET")
 
@@ -30,9 +29,9 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 clob_api = ClobApi()
+
 price_engine = PriceEngine(symbol="btc/usd")
 price_engine.start()
-
 
 class OrderType:
     def __init__(self, order: Order):
@@ -58,9 +57,9 @@ class OrderType:
 class TradeManager:
     def __init__(self, interval: int):
         self.clob_api = clob_api
-        self.price_engine = price_engine
         self.market = clob_api.get_market(interval)
 
+        self.strategy = SimpleStrategy()
         self.order_book_engine = OrderBookEngine(self.market)
         self.order_book_engine.start()
 
@@ -70,27 +69,29 @@ class TradeManager:
         self.last_orders_time = 0
         self.orders = self.get_orders()
 
-    
-    def trade(self, seconds_left: int, price: float, target: float):
-        delta = price - target
+    def trade(self, seconds_left: int, delta: float):
         bid, ask = self.order_book_engine.get_bid_ask(MyToken.A)
 
         if bid is None or ask is None or (bid == 0 and ask == 0):
-            print(f"{seconds_left} {price:.4f} {delta:+.2f} Bid: {bid} Ask: {ask} - no bid or ask or both are 0")
+            print(f"{seconds_left} delta {delta:+.2f} Bid: {bid} Ask: {ask} - no bid or ask or both are 0")
             return
 
-        #up = 0.5 if price >= target else 0
-        #down = 0.5 if price <= target else 0
         up = bid
         down = round(1 - ask, 2)
-        print(f"{seconds_left} {price:.4f} {delta:+.2f} Bid: {bid} Ask: {ask} Up: {up:.2f} Down: {down:.2f}")
 
-        orders_a = self.amm_a.get_orders(seconds_left, price, delta, bid, ask, up) if delta > 0 else []
-        orders_b = self.amm_b.get_orders(seconds_left, target, -delta, round(1 - ask, 2), round(1 - bid, 2), down) if delta < 0 else [] 
+        orders = [] 
+
+        orders_a = self.amm_a.get_orders(seconds_left, 0, 0, bid, ask, up)
+        orders_b = self.amm_b.get_orders(seconds_left, 0, 0, round(1 - ask, 2), round(1 - bid, 2), down)
    
-        print(f"  Orders_a: {orders_a} Orders_b: {orders_b}")
-        orders = orders_a + orders_b
+        shares = self.balances[MyToken.A] + self.balances[MyToken.B]
+        if shares < MAX_SHARES: 
+            orders = orders_a + orders_b
 
+        print(f"  Orders_a: {orders_a} Orders_b: {orders_b}")
+
+        # Force refresh orders to get latest state before calculating what to cancel/place
+        # self.last_orders_time = 0
         self.orders = self.get_orders()
         (orders_to_cancel, orders_to_place) = self.get_orders_to_cancel_and_place(orders)
         print(f"  Orders_to_cancel: {orders_to_cancel} Orders_to_place: {orders_to_place} Orders: {self.orders}")
@@ -102,15 +103,23 @@ class TradeManager:
             self.orders = self.get_orders()
 
     def cancel_orders(self, orders: list[Order]) -> list[Order]:
-        for order in orders:
-            self.clob_api.cancel_order(order.id)
+        order_ids = [order.id for order in orders]
+        self.clob_api.cancel_orders(order_ids)
         return orders
 
     def place_orders(self, orders: list[Order]) -> list[Order]:
-        ret = [] 
-        for order in orders:
-            ret.append(self.place_order(order))
-        return ret 
+        # `py_clob_client` in this repo doesn't support PostOrdersArgs/batch posting.
+        # Our `ClobApi.post_orders()` accepts dicts and posts one-by-one.
+        orders_to_place = [
+            {
+                "price": order.price,
+                "size": order.size,
+                "side": order.side.value,
+                "token_id": self.market.token_id(order.token),
+            }
+            for order in orders
+        ]
+        self.clob_api.post_orders(orders_to_place)
 
     def get_orders_to_cancel_and_place(self, expected_orders: list[Order]) -> list[Order]:
         orders_to_cancel, orders_to_place = [], []
@@ -137,8 +146,10 @@ class TradeManager:
                 if OrderType(order) == order_type
             )
 
-            # if open_size too big, cancel all orders of this type
-            if open_size > expected_size:
+            # Cancel all existing orders of this type if:
+            # 1. Total size doesn't match, OR
+            # 2. There are multiple orders (duplicates) - always consolidate to a single order
+            if open_size != expected_size or len(open_orders) > 1:
                 orders_to_cancel += open_orders
                 new_size = expected_size
             # otherwise get the remaining size
@@ -161,10 +172,21 @@ class TradeManager:
             token=order_type.token,
         )
 
+    def get_balances(self) -> dict:
+        balances = self.clob_api.get_balances(self.market)
+        return balances 
+
     def get_orders(self) -> list[Order]:
         if time.time() - self.last_orders_time < 10:
             return self.orders
+        
+        self.balances = self.get_balances()
+        self.amm_a.set_balance(self.balances[MyToken.A])
+        self.amm_b.set_balance(self.balances[MyToken.B])
+        self.amm_a.set_imbalance(self.balances[MyToken.A] - self.balances[MyToken.B])
+        self.amm_b.set_imbalance(self.balances[MyToken.B] - self.balances[MyToken.A])
         self.last_orders_time = time.time()
+        
         orders = self.clob_api.get_orders(self.market.condition_id)
         return [
             Order(
@@ -191,6 +213,11 @@ class TradeManager:
             id=order_id,
             token=new_order.token,
         )
+
+    def cancel_all_buy_orders(self, delta: float):
+        for order in self.orders:
+            if order.side == Side.BUY:
+                self.clob_api.cancel_order(order.id)
   
 def main():
     interval = 0 
@@ -198,40 +225,32 @@ def main():
     trade_manager = None
 
     while True:
-        time.sleep(0.1)
+        time.sleep(1)
 
         data = price_engine.get_data()
         if data is None:
             print("No price data")
             continue
 
-        timestamp = data.get('timestamp')
         price = data.get('price')
         target = data.get('target')
-        if timestamp is None or price is None or target is None:
-            print("No timestamp, price, or target")
+        if price is None or target is None:
             continue
         delta = price - target
 
-        last = timestamp
 
-
-        now = int(timestamp) + 10 # 10 seconds buffer
+        now = int(time.time()) # + 910
         seconds_left = 900 - (now % 900)
         if now // 900 * 900 > interval:  # 15-min intervals
             interval = now // 900 * 900
             if trade_manager is not None:
-                last_delta = delta
+                trade_manager.cancel_all_buy_orders(delta)
                 trade_manager.order_book_engine.stop() 
 
             interval = now // 900 * 900
             trade_manager = TradeManager(interval)
 
-        if target is None or data.get('interval') < interval:
-            print(f"{seconds_left} {price} - no target")
-            continue            
-
-        trade_manager.trade(seconds_left, price, target)
+        trade_manager.trade(seconds_left, delta)
 
 if __name__ == "__main__":
     main()

@@ -60,18 +60,21 @@ def fetch_trades(condition_ids: list, token_1):
                 trade['size'] = -float(trade['size'])
 
             if str(trade['asset']) == str(token_1):
-                trade['token 1'] = round(trade['size'], 2)
-                trade['price 1'] = round(trade['price'], 2)
+                trade['YES size'] = round(trade['size'], 2)
+                trade['YES price'] = round(trade['price'], 2)
+                trade['YES Cost'] = round(trade['size'] * trade['price'], 2)
 
-                trade['token 2'] = 0
-                trade['price 2'] = round(1 - trade['price 1'], 2)
+                trade['NO size'] = 0
+                trade['NO price'] = round(1 - trade['price'], 2)
+                trade['NO Cost'] = 0
             else:
-                trade['token 2'] = round(trade['size'], 2)
-                trade['price 2'] = round(trade['price'], 2)
+                trade['NO size'] = round(trade['size'], 2)
+                trade['NO price'] = round(trade['price'], 2)
+                trade['NO Cost'] = round(trade['size'] * trade['price'], 2)
 
-                trade['token 1'] = 0
-                trade['price 1'] = round(1 - trade['price 2'], 2)
-
+                trade['YES size'] = 0
+                trade['YES price'] = round(1 - trade['price'], 2)
+                trade['YES Cost'] = 0
         if len(data) < limit:
             break
         offset += len(data)
@@ -79,11 +82,11 @@ def fetch_trades(condition_ids: list, token_1):
     return trades
 
 def save_trades(interval: int, trades: list):
-    headers = ['timestamp', 'proxyWallet', 'outcome', 'price', 'size']
+    headers = ['timestamp', 'proxyWallet', 'YES price', 'YES size', 'YES Cost', 'NO price', 'NO size', 'NO Cost']
     trades = sorted(trades, key=lambda x: int(x['timestamp']))
 
     # File path
-    path = f"./data/trades_{interval}.csv"
+    path = f"./data/trades/{interval}.csv"
  
     with open(path, mode="w", newline="") as file:
         writer = csv.writer(file)
@@ -98,7 +101,7 @@ def save_trades(interval: int, trades: list):
 
 def main():
     now = int(time.time())
-    for i in range(100):
+    for i in range(3):
         interval = (now // 900 - i - 1) * 900
         market = client.get_market(interval) 
 

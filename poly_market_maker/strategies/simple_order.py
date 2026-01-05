@@ -6,7 +6,7 @@ from poly_market_maker.order import Order, Side
 
 SIZE = 5
 MAX_BALANCE = 10
-MAX_IMBALANCE = 50
+MAX_IMBALANCE = 20
 MAX_HEDGE_IMBALANCE = 50
 
 class SimpleOrder:
@@ -21,21 +21,27 @@ class SimpleOrder:
         self.p_min = 0.01
         self.p_max = 0.90
         self.delta = 0.01
-        self.spread = 0.05
-        self.depth = 1
+        self.spread = 0.01
+        self.depth = 5
         self.max_collateral = 100
         self.balance = 0
+        self.imbalance = 0
 
     def set_balance(self, balance: float):
         self.balance = balance
 
+    def set_imbalance(self, imbalance: float):
+        self.imbalance = imbalance  
+
     def set_buy_prices(self, bid: float):
+        imbalance = self.imbalance 
         self.buy_prices = []
         for i in range(int(self.depth)):
             # price = min(round(bid - i * self.delta, 2), 0.49)
-            price = min(self.up, round(bid - i * self.delta, 2))
-            if self.p_min <= price <= self.p_max:
+            price = round(bid - i * self.delta, 2)
+            if self.p_min <= price <= self.p_max and imbalance + SIZE < MAX_IMBALANCE:
                 self.buy_prices.append(price)
+                imbalance += SIZE
 
     def set_sell_prices(self, ask: float):
         self.sell_prices = []
@@ -107,6 +113,6 @@ class SimpleOrder:
 
     def get_orders(self, seconds_left: int, price: float, delta: float, bid: float, ask: float, up: float):
         self.set_price(bid, ask, up)
-        if self.balance <= MAX_BALANCE:
-            return self.get_buy_orders() + self.get_sell_orders()
-        return self.get_sell_orders()
+        # if self.balance <= MAX_BALANCE:
+        return self.get_buy_orders() # + self.get_sell_orders()
+        # return self.get_sell_orders()
