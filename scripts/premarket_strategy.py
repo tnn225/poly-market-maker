@@ -85,8 +85,8 @@ def print_interval():
 def screen_intervals():
     parser = argparse.ArgumentParser()
     parser.add_argument("--days", type=int, default=60)
-    parser.add_argument("--delta-min", type=float, default=-300)
-    parser.add_argument("--delta-max", type=float, default=-200)
+    parser.add_argument("--delta-min", type=float, default=-1000)
+    parser.add_argument("--delta-max", type=float, default=-500)
     parser.add_argument("--bid-threshold", type=float, default=0.49)
     parser.add_argument("--first-seconds", type=int, default=300)
     parser.add_argument("--show", type=int, default=100, help="How many selected intervals to print")

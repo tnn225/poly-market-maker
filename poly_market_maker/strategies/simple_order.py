@@ -95,12 +95,12 @@ class SimpleOrder:
         ]
         return orders
 
-    def get_buy_order(self, price: float):
+    def get_buy_order(self, price: float, size = SIZE):
         return Order(
             price=price,
             side=Side.BUY,
             token=self.token,
-            size = SIZE
+            size = size
         )
 
     def get_hedge_orders(self):
