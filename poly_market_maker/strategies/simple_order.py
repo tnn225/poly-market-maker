@@ -19,9 +19,9 @@ class SimpleOrder:
         #    raise Exception("Depth does not exceed spread.")
         self.token = token
         self.p_min = 0.01
-        self.p_max = 0.90
+        self.p_max = 0.99
         self.delta = 0.01
-        self.spread = 0.01
+        self.spread = 0.00
         self.depth = 10
         self.max_collateral = 100
         self.balance = 0
@@ -34,20 +34,18 @@ class SimpleOrder:
         self.imbalance = imbalance  
 
     def set_buy_prices(self, bid: float):
-        imbalance = self.imbalance 
         self.buy_prices = []
         for i in range(int(self.depth)):
             # price = min(round(bid - i * self.delta, 2), 0.49)
             price = round(bid - i * self.delta, 2)
-            if self.p_min <= price <= self.p_max and imbalance + SIZE < MAX_IMBALANCE:
+            if self.p_min <= price <= self.p_max: # and imbalance + SIZE < MAX_IMBALANCE:
                 self.buy_prices.append(price)
-                imbalance += SIZE
 
     def set_sell_prices(self, ask: float):
         self.sell_prices = []
         for i in range(int(self.depth)):
-            price = max(round(self.up+self.spread, 2), round(ask + i * self.delta, 2))
-            # price = round(ask + i * self.delta, 2)
+            # price = max(round(self.up+self.spread, 2), round(ask + i * self.delta, 2))
+            price = round(ask + i * self.delta, 2)
             if 0.01 <= price <= 0.99:
                 self.sell_prices.append(price)
 
@@ -97,6 +95,14 @@ class SimpleOrder:
         ]
         return orders
 
+    def get_buy_order(self, price: float):
+        return Order(
+            price=price,
+            side=Side.BUY,
+            token=self.token,
+            size = SIZE
+        )
+
     def get_hedge_orders(self):
         """Return buy orders with fixed capital per level"""
         orders = [
@@ -111,8 +117,15 @@ class SimpleOrder:
         ]
         return orders
 
+    def get_skew(self, imbalance: float, price: float) -> float:
+        # if price > 0.5:
+        imbalance -= (price - 0.5) * 100 * 5
+        if imbalance <= 0:
+            return 0
+        return (imbalance / SIZE) / 100
+
     def get_orders(self, seconds_left: int, price: float, delta: float, bid: float, ask: float, up: float):
-        self.set_price(bid, ask, up)
-        # if self.balance <= MAX_BALANCE:
+        skew = self.get_skew(self.imbalance, bid)
+        self.set_price(bid - skew, ask, up)
+
         return self.get_buy_orders() # + self.get_sell_orders()
-        # return self.get_sell_orders()

@@ -6,31 +6,20 @@ import time
 
 from poly_market_maker.order_book_engine import OrderBookEngine
 from poly_market_maker.price_engine import PriceEngine
-from poly_market_maker.price_feed import PriceFeedClob
 from poly_market_maker.my_token import MyToken
-from poly_market_maker.utils import setup_logging
 from poly_market_maker.clob_api import ClobApi
-from poly_market_maker.prediction_engine import PredictionEngine
 
 from dotenv import load_dotenv          # Environment variable management
 load_dotenv()                           # Load environment variables from .env file
 
-FUNDER = os.getenv("FUNDER")
-TARGET = os.getenv("TARGET")
-DEBUG = True
-
-setup_logging()
-logger = logging.getLogger(__name__)
 
 client = ClobApi()
 engine = PriceEngine(symbol="btc/usd")
 engine.start()
-prediction_engine = PredictionEngine()
 header = ["timestamp", "price", "bid", "ask"]
 
-
 # Ensure ./data exists
-os.makedirs("./data", exist_ok=True)
+os.makedirs("./data/prices", exist_ok=True)
 
 def write_row(row):
     timestamp = row[0]
@@ -39,7 +28,7 @@ def write_row(row):
     date = datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime("%Y-%m-%d")
 
     # File path
-    path = f"./data/price_{date}.csv"
+    path = f"./data/prices/price_{date}.csv"
     file_exists = os.path.exists(path)
 
     with open(path, mode="a", newline="") as file:
@@ -52,17 +41,6 @@ def write_row(row):
         # Write the row
         writer.writerow(row)
 
-def get_action(bid, ask, up, down, spread):
-    action = ""
-    if bid and up and bid > 0:
-        value = (up - bid) / bid 
-        if value > spread:
-            action = "BUY"
-    if ask and down and ask < .99:
-        value = (down - (0.99 - ask)) / (1 - ask)
-        if value > spread: 
-            action = "SELL"
-    return action
 
 def main():
     interval = None 
@@ -74,11 +52,11 @@ def main():
     while True:
         time.sleep(0.1)
 
-        timestamp = engine.get_timestamp()
-        price = engine.get_price()
         data = engine.get_data()
         target = data.get('target')
-        
+        timestamp = data.get('timestamp')
+        price = data.get('price')
+
         if timestamp is None or timestamp == last:
             continue
         last = timestamp
@@ -95,19 +73,13 @@ def main():
 
         bid, ask = order_book.get_bid_ask(MyToken.A)
         bid_b, ask_b = order_book.get_bid_ask(MyToken.B)
-        # print(f"Bid B: {bid_b}, Ask B: {ask_b}")
-        
-        # Calculate probability if target is available
-        up = None
-        if target is not None and price is not None:
-            up = prediction_engine.get_probability(price, target, seconds_left)
         
         row = [int(timestamp), price, bid, ask]
         write_row(row)
         
-        if target is not None and up is not None:
+        if target is not None:
             delta = price - target
-            print(f"{seconds_left} {price} {delta:.4f} Bid: {bid}, Ask: {ask}, Up: {up:.3f}")
+            print(f"{seconds_left} {price} {delta:+.4f} Bid: {bid}, Ask: {ask}")
         else:
             print(f"{seconds_left} {price} Bid: {bid}, Ask: {ask}")
 

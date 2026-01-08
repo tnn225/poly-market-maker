@@ -23,9 +23,14 @@ CHAIN_ID = 137
 PRIVATE_KEY = os.getenv("PRIVATE_KEY")
 FUNDER = os.getenv("FUNDER")
 
+# Maker fee rate in basis points. Must match the market's configured maker fee.
+# Defaulting to 1000 bps based on observed API error; override via env if needed.
+FEE_RATE_BPS = int(os.getenv("FEE_RATE_BPS", "1000"))
+
 class ClobApi:
     def __init__(self):
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.fee_rate_bps = FEE_RATE_BPS
         self.client = ClobClient(
             HOST,  # The CLOB API endpoint
             key=PRIVATE_KEY,  # Your wallet's private key
@@ -107,7 +112,13 @@ class ClobApi:
         start_time = time.time()
         try:
             resp = self.client.create_and_post_order(
-                OrderArgs(price=price, size=size, side=side, token_id=token_id)
+                OrderArgs(
+                    price=price,
+                    size=size,
+                    side=side,
+                    token_id=str(token_id),
+                    fee_rate_bps=self.fee_rate_bps,
+                )
             )
             clob_requests_latency.labels(
                 method="create_and_post_order", status="ok"
@@ -309,13 +320,20 @@ class ClobApi:
                     size = float(o["size"])
                     side = o["side"]
                     token_id = str(o["token_id"])
+                    fee_rate_bps = int(o.get("fee_rate_bps", self.fee_rate_bps))
                 except Exception as e:
                     raise ValueError(
                         f"Invalid order dict for post_orders (expected keys: price,size,side,token_id). Got: {o}"
                     ) from e
 
                 signed = self.client.create_order(
-                    OrderArgs(price=price, size=size, side=side, token_id=token_id)
+                    OrderArgs(
+                        price=price,
+                        size=size,
+                        side=side,
+                        token_id=token_id,
+                        fee_rate_bps=fee_rate_bps,
+                    )
                 )
                 responses.append(self.client.post_order(signed, orderType=order_type))
             else:

@@ -20,6 +20,7 @@ class PriceEngine(threading.Thread):
         # Shared state
         self.price = None
         self.timestamp = None
+        self.target = None
 
         
         self.interval = 0
@@ -28,7 +29,6 @@ class PriceEngine(threading.Thread):
         if os.path.exists(filename):
             self.read_prices(filename)
 
-        """
         intervals = Interval()
         self.target = None
         while self.target is None:
@@ -41,7 +41,6 @@ class PriceEngine(threading.Thread):
                 self.interval = data['interval']
                 self.target = data['openPrice']
                 print(f"Target: {self.target}")
-        """
 
         # Thread safety
         self.lock = threading.Lock()

@@ -1,8 +1,10 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import pandas as pd
 import numpy as np
 import logging
+
+
 
 from poly_market_maker.intervals import Interval
 from scipy.stats import norm
@@ -26,15 +28,19 @@ logging.basicConfig(
 FEATURE_COLS = ['seconds_left_log', 'log_return', 'delta', 'seconds_left', 'bid', 'ask', 'z_score', 'prob_est']
 
 class Dataset:
-    def __init__(self, days=DAYS):
-        self.days = days
-        self.intervals = Interval(DAYS)
-        self._read_dates()
-        self._add_target_and_is_up()
-        self._train_test_split()
+    def __init__(self, days=None):
         self.feature_cols = FEATURE_COLS
-        self.show()
+        self.days = days
+        self.intervals = Interval()
 
+        if self.days:
+            self._read_dates()
+            print(f" read dates rows {self.df.shape[0]}")
+            self._add_target_and_is_up()
+            print(f" added target and is up rows {self.df.shape[0]}")
+            self._train_test_split()
+            print(f" train test split rows {self.train_df.shape[0]} {self.test_df.shape[0]}")
+            self.show()
 
     def show(self):
         print(self.train_df.head())
@@ -48,8 +54,8 @@ class Dataset:
 
     def _read_dates(self):
         today = datetime.now()
-        # dates = [(today - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(self.days)]
-        dates = ["2025-12-16"]
+        dates = [(today - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(self.days)]
+        # dates = ["2025-12-16"]
         # Load data from CSV files for each date
         dataframes = []
         for date in dates:
@@ -112,6 +118,17 @@ class Dataset:
 
         return df
 
+
+    def _add_intervals(self):
+        for interval in self.df['interval'].unique():
+            if interval in self.price_dict and interval + 900 in self.price_dict:
+                continue
+
+            data = self.intervals.get_data('BTC', interval)
+            if data:
+                self.price_dict[interval] = data['openPrice']
+                self.price_dict[interval + 900] = data['closePrice']
+
     def _add_target_and_is_up(self):
         # Initialize columns
         self.df['target'] = None
@@ -121,21 +138,16 @@ class Dataset:
         self.df['interval'] = self.df['timestamp'] // 900 * 900
         
         # Create price lookup dictionary for O(1) access
-        price_dict = dict(zip(self.df['timestamp'], self.df['price']))
-        for interval in self.df['interval'].unique():
-            data = self.intervals.get_data('BTC', interval, only_cache=True)
-            if data:
-                price_dict[interval] = data['openPrice']
-                price_dict[interval + 900] = data['closePrice']
+        self.price_dict = dict(zip(self.df['timestamp'], self.df['price']))
         
         # Calculate target and is_up for each unique interval
         interval_values = {}
         for interval in self.df['interval'].unique():
-            target = price_dict.get(interval)
+            target = self.price_dict.get(interval)
             
             if target is not None:
                 # Get price at the end of the interval (interval + 900 seconds)
-                next_interval_price = price_dict.get(interval + 900)
+                next_interval_price = self.price_dict.get(interval + 900)
                 
                 if next_interval_price is not None:
                     # is_up = True if price goes up or stays same
@@ -196,16 +208,6 @@ class Dataset:
         # Use norm.cdf to get probability estimates
         self.df["prob_est"] = norm.cdf(self.df["z_score"])
 
-        self.df['bid_bin'] = self.df['bid'].apply(self.get_bid_bin)
-        self.df['seconds_left_bin'] = self.df['seconds_left'].apply(self.get_seconds_left_bin)
-
-    def get_seconds_left_bin(self, seconds_left):
-        return int(seconds_left // SECONDS_LEFT_BIN_SIZE)
-
-    def get_bid_bin(self, bid):
-        return int(bid * 100)
-
-
     def _train_test_split(self, test_ratio: float = 0.2):
         df_sorted = self.df.sort_values('timestamp').reset_index(drop=True)
         split_idx = int(len(df_sorted) * (1 - test_ratio))
@@ -224,67 +226,14 @@ class Dataset:
         self.test_df = self._balance_df(self.test_df)
 
         return self.train_df, self.test_df
-
-    def evaluate_model_metrics(self, df: pd.DataFrame, probability_column: str = 'probability', spread: float = 0.05):
-        eval_df = df.dropna(subset=[probability_column, 'label']).copy()
-        y_true = eval_df['label'].astype(int)
-        probs = eval_df[probability_column].astype(float)
-        y_pred = (probs - spread > eval_df['bid']).astype(int)
-
-        # Calculate confusion matrix
-        cm = confusion_matrix(y_true, y_pred)
-        # Confusion matrix format: [[TN, FP], [FN, TP]]
-        # Handle different matrix sizes
-        if cm.shape == (2, 2):
-            TN, FP, FN, TP = cm.ravel()
-        elif cm.shape == (1, 1):
-            # Only one class present in predictions
-            if y_pred[0] == 0:
-                TN, FP, FN, TP = cm[0, 0], 0, 0, 0
-            else:
-                TN, FP, FN, TP = 0, 0, 0, cm[0, 0]
-        else:
-            # Fallback: try to extract values safely
-            TN = cm[0, 0] if cm.shape[0] >= 1 and cm.shape[1] >= 1 else 0
-            FP = cm[0, 1] if cm.shape[0] >= 1 and cm.shape[1] >= 2 else 0
-            FN = cm[1, 0] if cm.shape[0] >= 2 and cm.shape[1] >= 1 else 0
-            TP = cm[1, 1] if cm.shape[0] >= 2 and cm.shape[1] >= 2 else 0
-        
-        # Calculate metrics from confusion matrix
-        total = TN + FP + FN + TP
-        accuracy = (TN + TP) / total if total > 0 else 0.0
-        precision = TP / (TP + FP) if (TP + FP) > 0 else 0.0
-        recall = TP / (TP + FN) if (TP + FN) > 0 else 0.0
-        f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
-
-        pnl = float('nan')
-        num_trades = 0
-        if {'bid', 'is_up'}.issubset(eval_df.columns):
-            actions = (probs - spread > eval_df['bid'])
-            trade_df = eval_df[actions].copy()
-            if len(trade_df) > 0:
-                trade_df['revenue'] = trade_df['is_up'].astype(float)
-                trade_df['cost'] = trade_df['bid']
-                pnl = float((trade_df['revenue'] - trade_df['cost']).sum())
-                num_trades = len(trade_df)
-
-        return {
-            'accuracy': accuracy,
-            'precision': precision,
-            'recall': recall,
-            'f1_score': f1,
-            'roc_auc': roc_auc_score(y_true, probs) if len(np.unique(y_true)) > 1 else float('nan'),
-            'total_pnl': pnl,
-            'num_trades': num_trades,
-            'num_rows': len(eval_df),
-            'confusion_matrix': cm.tolist(),
-        }
  
 def main():
-    dataset = Dataset()
+    dataset = Dataset(days=60)
     df = dataset.df
     
 
     return 
 if __name__ == "__main__":
     main()
+
+

@@ -59,55 +59,17 @@ class TradeManager:
         self.clob_api = clob_api
         self.market = clob_api.get_market(interval)
 
-        self.strategy = SimpleStrategy()
-        self.order_book_engine = OrderBookEngine(self.market)
-        self.order_book_engine.start()
-
         self.amm_a = SimpleOrder(token=MyToken.A)
         self.amm_b = SimpleOrder(token=MyToken.B)
 
         self.last_orders_time = 0
         self.orders = self.get_orders()
 
-    def trade(self, seconds_left: int, delta: float):
-        bid, ask = self.order_book_engine.get_bid_ask(MyToken.A)
+    def cancel_orders(self, orders: list[Order]):
+        for order in orders:
+            self.clob_api.cancel_order(order.id)
 
-        if bid is None or ask is None or (bid == 0 and ask == 0):
-            print(f"{seconds_left} delta {delta:+.2f} Bid: {bid} Ask: {ask} - no bid or ask or both are 0")
-            return
-
-        up = bid
-        down = round(1 - ask, 2)
-
-        orders = [] 
-
-        orders_a = self.amm_a.get_orders(seconds_left, 0, 0, bid, ask, up)
-        orders_b = self.amm_b.get_orders(seconds_left, 0, 0, round(1 - ask, 2), round(1 - bid, 2), down)
-   
-        shares = self.balances[MyToken.A] + self.balances[MyToken.B]
-        if shares < MAX_SHARES: 
-            orders = orders_a + orders_b
-
-        print(f"  Orders_a: {orders_a} Orders_b: {orders_b}")
-
-        # Force refresh orders to get latest state before calculating what to cancel/place
-        # self.last_orders_time = 0
-        self.orders = self.get_orders()
-        (orders_to_cancel, orders_to_place) = self.get_orders_to_cancel_and_place(orders)
-        print(f"  Orders_to_cancel: {orders_to_cancel} Orders_to_place: {orders_to_place} Orders: {self.orders}")
-
-        if not DEBUG and len(orders_to_cancel) + len(orders_to_place) > 0:
-            self.cancel_orders(orders_to_cancel)
-            self.place_orders(orders_to_place)
-            self.last_orders_time = 0
-            self.orders = self.get_orders()
-
-    def cancel_orders(self, orders: list[Order]) -> list[Order]:
-        order_ids = [order.id for order in orders]
-        self.clob_api.cancel_orders(order_ids)
-        return orders
-
-    def place_orders(self, orders: list[Order]) -> list[Order]:
+    def place_orders(self, orders: list[Order]):
         # `py_clob_client` in this repo doesn't support PostOrdersArgs/batch posting.
         # Our `ClobApi.post_orders()` accepts dicts and posts one-by-one.
         orders_to_place = [
@@ -121,72 +83,11 @@ class TradeManager:
         ]
         self.clob_api.post_orders(orders_to_place)
 
-    def get_orders_to_cancel_and_place(self, expected_orders: list[Order]) -> list[Order]:
-        orders_to_cancel, orders_to_place = [], []
-
-        expected_order_types = set(OrderType(order) for order in expected_orders)
-
-        orders_to_cancel += list(
-            filter(
-                lambda order: (
-                    OrderType(order) not in expected_order_types and order.size == MIN_SIZE
-                ),
-                self.orders,
-            )
-        )
-
-        for order_type in expected_order_types:
-            open_orders = [
-                order for order in self.orders if OrderType(order) == order_type
-            ]
-            open_size = sum(order.size for order in open_orders)
-            expected_size = sum(
-                order.size
-                for order in expected_orders
-                if OrderType(order) == order_type
-            )
-
-            # Cancel all existing orders of this type if:
-            # 1. Total size doesn't match, OR
-            # 2. There are multiple orders (duplicates) - always consolidate to a single order
-            if open_size != expected_size or len(open_orders) > 1:
-                orders_to_cancel += open_orders
-                new_size = expected_size
-            # otherwise get the remaining size
-            else:
-                new_size = round(expected_size - open_size, 2)
-
-            if new_size >= MIN_SIZE:
-                orders_to_place += [
-                    self._new_order_from_order_type(order_type, new_size)
-                ]
-
-        return (orders_to_cancel, orders_to_place)
-
-    @staticmethod
-    def _new_order_from_order_type(order_type: OrderType, size: float) -> Order:
-        return Order(
-            price=order_type.price,
-            size=size,
-            side=order_type.side,
-            token=order_type.token,
-        )
-
-    def get_balances(self) -> dict:
-        balances = self.clob_api.get_balances(self.market)
-        return balances 
-
     def get_orders(self) -> list[Order]:
         if time.time() - self.last_orders_time < 10:
             return self.orders
         
-        self.balances = self.get_balances()
-        self.amm_a.set_balance(self.balances[MyToken.A])
-        self.amm_b.set_balance(self.balances[MyToken.B])
-        self.amm_a.set_imbalance(self.balances[MyToken.A] - self.balances[MyToken.B])
-        self.amm_b.set_imbalance(self.balances[MyToken.B] - self.balances[MyToken.A])
-        self.last_orders_time = time.time()
-        
+        self.last_orders_time = time.time()        
         orders = self.clob_api.get_orders(self.market.condition_id)
         return [
             Order(
@@ -214,15 +115,21 @@ class TradeManager:
             token=new_order.token,
         )
 
-    def cancel_all_buy_orders(self, delta: float):
-        for order in self.orders:
-            if order.side == Side.BUY:
-                self.clob_api.cancel_order(order.id)
+    def trade(self, delta: float):
+        if -1000 <= delta < -0:
+            order = self.amm_a.get_buy_order(0.49)
+            self.place_order(order)
+
+        if 0 <= delta <= 1000:
+            order = self.amm_b.get_buy_order(0.49)
+            self.place_order(order)
+
   
 def main():
     interval = 0 
     last = 0
     trade_manager = None
+    has_orders = False
 
     while True:
         time.sleep(1)
@@ -238,19 +145,21 @@ def main():
             continue
         delta = price - target
 
-
-        now = int(time.time()) + 910
+        now = int(time.time()) + 10
         seconds_left = 900 - (now % 900)
+        print(f"seconds_left: {seconds_left} {price:.2f} {delta:+.2f}")
         if now // 900 * 900 > interval:  # 15-min intervals
             interval = now // 900 * 900
-            if trade_manager is not None:
-                trade_manager.cancel_all_buy_orders(delta)
-                trade_manager.order_book_engine.stop() 
-
-            interval = now // 900 * 900
             trade_manager = TradeManager(interval)
+            trade_manager.trade(delta)
+            has_orders = True
 
-        trade_manager.trade(seconds_left, delta)
+        if trade_manager is not None and seconds_left < 600 and has_orders:
+            trade_manager.last_orders_time = 0
+            trade_manager.orders = trade_manager.get_orders()
+            trade_manager.cancel_orders(trade_manager.orders)
+            has_orders = False
+
 
 if __name__ == "__main__":
     main()
