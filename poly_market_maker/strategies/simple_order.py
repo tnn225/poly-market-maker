@@ -21,8 +21,8 @@ class SimpleOrder:
         self.p_min = 0.01
         self.p_max = 0.99
         self.delta = 0.01
-        self.spread = 0.00
-        self.depth = 10
+        self.spread = 0.05
+        self.depth = 5
         self.max_collateral = 100
         self.balance = 0
         self.imbalance = 0
@@ -33,37 +33,18 @@ class SimpleOrder:
     def set_imbalance(self, imbalance: float):
         self.imbalance = imbalance  
 
-    def set_buy_prices(self, bid: float):
+    def set_price(self, bid: float, delta: float):
+        imbalance = self.imbalance - delta 
         self.buy_prices = []
+        # print(f"  set_buy_prices self.depth: {self.depth} bid: {bid:.2f} imbalance: {imbalance:.2f}")
         for i in range(int(self.depth)):
             # price = min(round(bid - i * self.delta, 2), 0.49)
             price = round(bid - i * self.delta, 2)
-            if self.p_min <= price <= self.p_max: # and imbalance + SIZE < MAX_IMBALANCE:
+            if self.p_min <= price <= self.p_max and price <= self.up - self.spread:
+                if imbalance > 0:
+                    imbalance -= SIZE
+                    continue
                 self.buy_prices.append(price)
-
-    def set_sell_prices(self, ask: float):
-        self.sell_prices = []
-        for i in range(int(self.depth)):
-            # price = max(round(self.up+self.spread, 2), round(ask + i * self.delta, 2))
-            price = round(ask + i * self.delta, 2)
-            if 0.01 <= price <= 0.99:
-                self.sell_prices.append(price)
-
-    def set_hedge_prices(self):
-        self.hedge_prices = []
-        for i in range(int(self.depth)):
-            price = round(0.01 + i * self.depth, 2)
-            if 0.01 <= price <= 0.1:
-                self.hedge_prices.append(price)
-
-    def set_price(self, bid: float, ask: float, up: float):
-        self.up = up
-        self.bid = bid 
-        self.ask = ask 
-        self.set_sell_prices(ask)
-        self.set_hedge_prices()
-        self.set_buy_prices(bid)
-        print(f"  set_price {self.token} buy_prices={self.buy_prices} sell_prices={self.sell_prices} hedge_prices={self.hedge_prices}")
 
     def get_sell_orders(self):
         balance = self.balance
@@ -117,15 +98,9 @@ class SimpleOrder:
         ]
         return orders
 
-    def get_skew(self, imbalance: float, price: float) -> float:
-        # if price > 0.5:
-        imbalance -= (price - 0.5) * 100 * 5
-        if imbalance <= 0:
-            return 0
-        return (imbalance / SIZE) / 100
 
-    def get_orders(self, seconds_left: int, price: float, delta: float, bid: float, ask: float, up: float):
-        skew = self.get_skew(self.imbalance, bid)
-        self.set_price(bid - skew, ask, up)
-
+    def get_orders(self, seconds_left: int, delta: float, bid: float, ask: float, up: float):
+        print(f"get_orders seconds_left: {seconds_left} delta: {delta:+.2f} bid: {bid:.2f} ask: {ask:.2f} up: {up:.2f}")
+        self.up = up
+        self.set_price(bid, delta)
         return self.get_buy_orders() # + self.get_sell_orders()

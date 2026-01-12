@@ -14,7 +14,6 @@ from poly_market_maker.clob_api import ClobApi
 from poly_market_maker.order import Side
 from poly_market_maker.strategies.simple_order import SimpleOrder
 from poly_market_maker.strategies.simple_strategy import SimpleStrategy
-from poly_market_maker.intervals import Interval
 
 from dotenv import load_dotenv          # Environment variable management
 load_dotenv()                           # Load environment variables from .env file
@@ -73,39 +72,82 @@ class TradeManager:
         self.matched_prices = {} 
         self.has_prices = {}
 
-    def trade(self, seconds_left: int, delta: float, up: float):
-        self.last_orders_time = 0
-        self.orders = self.get_orders()
+    def check_price(self, order: Order) -> bool:
+        if order.price in self.has_prices:
+            return False
 
+        if order.price in self.matched_prices and self.matched_prices[order.price] in self.has_prices:
+            return False
+
+        return True
+
+    def trade(self, seconds_left: int, delta: float):
         bid, ask = self.order_book_engine.get_bid_ask(MyToken.A)
-        print(f"trade {seconds_left} delta {delta:+.2f} Bid: {bid} Ask: {ask} up: {up:.2f}")
 
         if bid is None or ask is None or (bid == 0 and ask == 0):
             print(f"{seconds_left} delta {delta:+.2f} Bid: {bid} Ask: {ask} - no bid or ask or both are 0")
             return
 
-        down = 1 - up
+        up = bid
+        down = round(1 - ask, 2)
+
         orders = [] 
-        orders_a = self.amm_a.get_orders(seconds_left, delta, bid, ask, up)
-        orders_b = self.amm_b.get_orders(seconds_left, -delta, round(1 - ask, 2), round(1 - bid, 2), down)
+        orders_a = self.amm_a.get_orders(seconds_left, 0, 0, bid, ask, up)
+        orders_b = self.amm_b.get_orders(seconds_left, 0, 0, round(1 - ask, 2), round(1 - bid, 2), down)
+
+        """
+        num_orders = min(len(orders_a), len(orders_b))
+        for i in range(num_orders):
+            order_a = orders_a[i]
+            order_b = orders_b[i]
+
+            if self.check_price(order_a) and self.check_price(order_b):
+                self.matched_prices[order_a.price] = order_b.price
+                self.matched_prices[order_b.price] = order_a.price
+
+                print(f"  Matched {order_a.price} {order_b.price}")
+
+                orders.append(order_a)
+                orders.append(order_b)
+        """
    
         shares = self.balances[MyToken.A] + self.balances[MyToken.B]
         if shares < MAX_SHARES: 
             orders = orders_a + orders_b
 
-        print(f"  A: {self.amm_a.buy_prices} B: {self.amm_b.buy_prices}")
-        # print(f"  Orders_a: {orders_a} Orders_b: {orders_b}")
+        print(f"  Orders_a: {orders_a} Orders_b: {orders_b}")
 
         # Force refresh orders to get latest state before calculating what to cancel/place
+        # self.last_orders_time = 0
+        self.orders = self.get_orders()
         (orders_to_cancel, orders_to_place) = self.get_orders_to_cancel_and_place(orders)
         print(f"  Orders_to_cancel: {orders_to_cancel} Orders_to_place: {orders_to_place} Orders: {self.orders}")
 
         if not DEBUG and len(orders_to_cancel) + len(orders_to_place) > 0:
-            self.cancel_orders(orders_to_cancel)
             self.place_orders(orders_to_place)
+            self.cancel_orders(orders_to_cancel)
             self.last_orders_time = 0
             self.orders = self.get_orders()
 
+    def cancel_orders(self, orders: list[Order]) -> list[Order]:
+        return None
+        for order in orders:
+            self.clob_api.cancel_order(order.id)
+        return orders
+
+    def place_multiple_orders(self, orders: list[Order]) -> list[Order]:
+        # `ClobApi.post_orders()` expects either dicts (it will sign them) or signed SDK orders.
+        # Convert our internal `poly_market_maker.order.Order` objects into dicts with token_id.
+        orders_to_place = [
+            {
+                "price": order.price,
+                "size": order.size,
+                "side": order.side.value,
+                "token_id": self.market.token_id(order.token),
+            }
+            for order in orders
+        ]
+        self.clob_api.post_orders(orders_to_place)
 
     def get_orders_to_cancel_and_place(self, expected_orders: list[Order]) -> list[Order]:
         orders_to_cancel, orders_to_place = [], []
@@ -162,6 +204,11 @@ class TradeManager:
         balances = self.clob_api.get_balances(self.market)
         return balances 
 
+    def set_prices(self, orders: list[Order]):
+        self.has_prices = {}    
+        for order in orders:
+            self.has_prices[order.price] = True
+
     def get_orders(self) -> list[Order]:
         if time.time() - self.last_orders_time < 10:
             return self.orders
@@ -174,7 +221,7 @@ class TradeManager:
         self.last_orders_time = time.time()
         
         order_dicts = self.clob_api.get_orders(self.market.condition_id)
-        self.orders = [
+        orders = [
             Order(
                 size=float(order_dict["size"]),
                 price=float(order_dict["price"]),
@@ -184,11 +231,8 @@ class TradeManager:
             )
             for order_dict in order_dicts
         ]
-        return self.orders
-
-    def cancel_orders(self, orders: list[Order]) -> list[Order]:
-        for order in orders:
-            self.clob_api.cancel_order(order.id)
+        self.set_prices(orders)
+        return orders
 
     def place_order(self, new_order: Order) -> Order:
         order_id = self.clob_api.place_order(
@@ -205,43 +249,18 @@ class TradeManager:
             token=new_order.token,
         )
 
-    def place_orders(self, orders: list[Order]):
-        for order in orders:
-            self.place_order(order)
-
-    def place_multiple_orders(self, orders: list[Order]) -> list[Order]:
-        # `ClobApi.post_orders()` expects either dicts (it will sign them) or signed SDK orders.
-        # Convert our internal `poly_market_maker.order.Order` objects into dicts with token_id.
-        orders_to_place = [
-            {
-                "price": order.price,
-                "size": order.size,
-                "side": order.side.value,
-                "token_id": self.market.token_id(order.token),
-            }
-            for order in orders
-        ]
-        self.clob_api.post_orders(orders_to_place)
-
+    def cancel_all_buy_orders(self, delta: float):
+        for order in self.orders:
+            if order.side == Side.BUY:
+                self.clob_api.cancel_order(order.id)
   
 def main():
-    now = int(time.time())
-    interval = now // 900 * 900
-    if price_engine.get_interval() != interval or price_engine.get_target() is None:
-        intervals = Interval()
-        data = intervals.get_data(price_engine.symbol, interval)
-        if data is not None:
-            price_engine.target = data['openPrice']
-            price_engine.interval = interval
-
     interval = 0 
     last = 0
     trade_manager = None
 
-    
-
     while True:
-        time.sleep(5)
+        time.sleep(1)
 
         data = price_engine.get_data()
         if data is None:
@@ -250,7 +269,6 @@ def main():
 
         price = data.get('price')
         target = data.get('target')
-        up = data.get('prob_est')
         if price is None or target is None:
             continue
         delta = price - target
@@ -261,12 +279,13 @@ def main():
         if now // 900 * 900 > interval:  # 15-min intervals
             interval = now // 900 * 900
             if trade_manager is not None:
+                trade_manager.cancel_all_buy_orders(delta)
                 trade_manager.order_book_engine.stop() 
 
             interval = now // 900 * 900
             trade_manager = TradeManager(interval)
 
-        trade_manager.trade(seconds_left, delta, up)
+        trade_manager.trade(seconds_left, delta)
 
 if __name__ == "__main__":
     main()
