@@ -6,12 +6,10 @@ def main():
     """Test function to fetch target prices."""
     intervals = Interval()
 
-    now = int(time.time()) # 15 minutes ago
-    end_time = now // 900 * 900
-    interval = end_time - 24 * 29 * 3600  
- 
-    while interval <= end_time:
-        print(f"Getting data for interval {interval}")
+    while True:
+        now = int(time.time()) - 900 # 15 minutes ago
+        interval = now // 900 * 900
+
         try:
             for symbol in ["BTC", "ETH", "SOL", "XRP"]:
                 data = intervals.get_data(symbol, interval)
@@ -22,7 +20,8 @@ def main():
         except Exception as e:
             print(f"Error fetching data for interval {interval}: {e}")
             time.sleep(60)
-        interval += 900
+
+        time.sleep(60 * 3)
         
 if __name__ == "__main__":
     main()

@@ -18,19 +18,20 @@ class Interval:
         if days > 0:
             self.read_dates()
 
-    def get_data(self, symbol: str, timestamp: int, only_cache=False):
+    def get_data(self, symbol: str, interval: int, only_cache=False):
         """Get target price from Polymarket API."""
-        print(f"Getting data for {symbol} at {timestamp}")
-        timestamp = timestamp // 900 * 900
+        # print(f"Getting data for {symbol} at {interval}")
+        interval = interval // 900 * 900
 
-        if self.cache.exists(timestamp):
-            return json.loads(self.cache.get(timestamp))
+        key = f"{symbol}_{interval}"
+        if self.cache.exists(key):
+            return json.loads(self.cache.get(key))
         if only_cache:
             return None
 
         # Fetch from API
-        eventStartTime = datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        endDate = datetime.fromtimestamp(timestamp + 900, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        eventStartTime = datetime.fromtimestamp(interval, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        endDate = datetime.fromtimestamp(interval + 900, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         params = {
             "symbol": symbol,
             "eventStartTime": eventStartTime,
@@ -48,18 +49,19 @@ class Interval:
                 response.raise_for_status()
                 data = response.json()
                 interval_data = {
-                    "interval": timestamp,
+                    "symbol": symbol,
+                    "interval": interval,
                     "openPrice": data.get('openPrice'),
                     "closePrice": data.get('closePrice'),
                     "completed": data.get('completed'),
                 }
                 # print(f"interval_data: {interval_data}")
                 if interval_data.get('completed'):
-                    # print(f"Caching data for timestamp {timestamp}")
-                    self.cache.set(timestamp, json.dumps(interval_data))
+                    # print(f"Caching data for interval {interval}")
+                    self.cache.set(key, json.dumps(interval_data))
                 return interval_data
             except Exception as e:
-                print(f"Error fetching target for timestamp {timestamp}: {e}")
+                print(f"Error fetching data for interval {interval}: {e}")
                 time.sleep(60)
         return None 
 
