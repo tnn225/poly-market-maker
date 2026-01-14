@@ -192,13 +192,38 @@ class Dataset:
         # Sort by timestamp to ensure proper rolling window calculation
         self.df = self.df.sort_values('timestamp').reset_index(drop=True)
         
-        # Compute rolling sigma of log_return with window 900
-        self.df['sigma'] = self.df['log_return'].rolling(window=60, min_periods=1).std()
+        window = 300
+        # Compute rolling per-second volatility:
+        #   log_return_step = log(price_t / price_{t-1})
+        #   log_return_per_sec = log_return_step / dt_seconds
+        #   sigma = rolling std(log_return_per_sec) over last `window` seconds
+        price_s = self.df["price"].astype(float)
+        ts_s = self.df["timestamp"].astype(int)
+        self.df["dt"] = ts_s.diff().fillna(1).clip(lower=1).astype(float)
+        self.df["log_return_step"] = np.log(price_s / price_s.shift(1))
+        self.df["log_return_per_sec"] = (self.df["log_return_step"] / self.df["dt"]).replace([np.inf, -np.inf], np.nan)
+        self.df["log_return_per_sec"] = self.df["log_return_per_sec"].fillna(0.0)
+
+        # Time-based rolling window (handles missing seconds better than sample-count rolling)
+        ts_index = pd.to_datetime(self.df["timestamp"], unit="s")
+        sigma_s = (
+            self.df.set_index(ts_index)["log_return_per_sec"]
+            .rolling(f"{int(window)}s", min_periods=2)
+            .std()
+        )
+        self.df["sigma"] = sigma_s.to_numpy()
+        self.df["sigma"] = self.df["sigma"].fillna(0.0)
+
+        # Annualize per-second volatility: sigma_annual = sigma * sqrt(seconds_per_year)
+        seconds_per_year = 365.0 * 24.0 * 60.0 * 60.0
+        self.df["sigma_annual"] = self.df["sigma"] * np.sqrt(seconds_per_year)
         
         # Estimate z_score from log_return, sigma, and seconds_left
-        # z_score = log_return / (sigma * sqrt(seconds_left / 900))
-        # This scales the volatility by the time remaining
-        time_factor = np.sqrt(self.df['seconds_left'] / 60.0)
+        # If sigma is per-second volatility, remaining-time volatility scales as:
+        #   sigma_rem = sigma * sqrt(seconds_left)
+        # So:
+        #   z_score = log_return / (sigma * sqrt(seconds_left))
+        time_factor = np.sqrt(self.df["seconds_left"].astype(float))
         # Avoid division by zero
         sigma_scaled = self.df['sigma'].replace(0, np.nan)
         self.df['z_score'] = self.df['log_return'] / (sigma_scaled * time_factor)

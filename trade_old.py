@@ -33,26 +33,7 @@ clob_api = ClobApi()
 price_engine = PriceEngine(symbol="btc/usd")
 price_engine.start()
 
-class OrderType:
-    def __init__(self, order: Order):
-        self.price = order.price
-        self.side = order.side
-        self.token = order.token
 
-    def __eq__(self, other):
-        if isinstance(other, OrderType):
-            return (
-                self.price == other.price
-                and self.side == other.side
-                and self.token == other.token
-            )
-        return False
-
-    def __hash__(self):
-        return hash((self.price, self.side, self.token))
-
-    def __repr__(self):
-        return f"OrderType[price={self.price}, side={self.side}, token={self.token}]"
 
 class TradeManager:
     def __init__(self, interval: int):
@@ -81,59 +62,6 @@ class TradeManager:
 
         return True
 
-    def trade(self, seconds_left: int, delta: float):
-        bid, ask = self.order_book_engine.get_bid_ask(MyToken.A)
-
-        if bid is None or ask is None or (bid == 0 and ask == 0):
-            print(f"{seconds_left} delta {delta:+.2f} Bid: {bid} Ask: {ask} - no bid or ask or both are 0")
-            return
-
-        up = bid
-        down = round(1 - ask, 2)
-
-        orders = [] 
-        orders_a = self.amm_a.get_orders(seconds_left, 0, 0, bid, ask, up)
-        orders_b = self.amm_b.get_orders(seconds_left, 0, 0, round(1 - ask, 2), round(1 - bid, 2), down)
-
-        """
-        num_orders = min(len(orders_a), len(orders_b))
-        for i in range(num_orders):
-            order_a = orders_a[i]
-            order_b = orders_b[i]
-
-            if self.check_price(order_a) and self.check_price(order_b):
-                self.matched_prices[order_a.price] = order_b.price
-                self.matched_prices[order_b.price] = order_a.price
-
-                print(f"  Matched {order_a.price} {order_b.price}")
-
-                orders.append(order_a)
-                orders.append(order_b)
-        """
-   
-        shares = self.balances[MyToken.A] + self.balances[MyToken.B]
-        if shares < MAX_SHARES: 
-            orders = orders_a + orders_b
-
-        print(f"  Orders_a: {orders_a} Orders_b: {orders_b}")
-
-        # Force refresh orders to get latest state before calculating what to cancel/place
-        # self.last_orders_time = 0
-        self.orders = self.get_orders()
-        (orders_to_cancel, orders_to_place) = self.get_orders_to_cancel_and_place(orders)
-        print(f"  Orders_to_cancel: {orders_to_cancel} Orders_to_place: {orders_to_place} Orders: {self.orders}")
-
-        if not DEBUG and len(orders_to_cancel) + len(orders_to_place) > 0:
-            self.place_orders(orders_to_place)
-            self.cancel_orders(orders_to_cancel)
-            self.last_orders_time = 0
-            self.orders = self.get_orders()
-
-    def cancel_orders(self, orders: list[Order]) -> list[Order]:
-        return None
-        for order in orders:
-            self.clob_api.cancel_order(order.id)
-        return orders
 
     def place_multiple_orders(self, orders: list[Order]) -> list[Order]:
         # `ClobApi.post_orders()` expects either dicts (it will sign them) or signed SDK orders.
@@ -253,7 +181,56 @@ class TradeManager:
         for order in self.orders:
             if order.side == Side.BUY:
                 self.clob_api.cancel_order(order.id)
-  
+
+    def trade(self, seconds_left: int, delta: float):
+        bid, ask = self.order_book_engine.get_bid_ask(MyToken.A)
+
+        if bid is None or ask is None or (bid == 0 and ask == 0):
+            print(f"{seconds_left} delta {delta:+.2f} Bid: {bid} Ask: {ask} - no bid or ask or both are 0")
+            return
+
+        up = bid
+        down = round(1 - ask, 2)
+
+        orders = [] 
+        orders_a = self.amm_a.get_orders(seconds_left, 0, 0, bid, ask, up)
+        orders_b = self.amm_b.get_orders(seconds_left, 0, 0, round(1 - ask, 2), round(1 - bid, 2), down)
+
+        """
+        num_orders = min(len(orders_a), len(orders_b))
+        for i in range(num_orders):
+            order_a = orders_a[i]
+            order_b = orders_b[i]
+
+            if self.check_price(order_a) and self.check_price(order_b):
+                self.matched_prices[order_a.price] = order_b.price
+                self.matched_prices[order_b.price] = order_a.price
+
+                print(f"  Matched {order_a.price} {order_b.price}")
+
+                orders.append(order_a)
+                orders.append(order_b)
+        """
+   
+        shares = self.balances[MyToken.A] + self.balances[MyToken.B]
+        if shares < MAX_SHARES: 
+            orders = orders_a + orders_b
+
+        print(f"  Orders_a: {orders_a} Orders_b: {orders_b}")
+
+        # Force refresh orders to get latest state before calculating what to cancel/place
+        # self.last_orders_time = 0
+        self.orders = self.get_orders()
+        (orders_to_cancel, orders_to_place) = self.get_orders_to_cancel_and_place(orders)
+        print(f"  Orders_to_cancel: {orders_to_cancel} Orders_to_place: {orders_to_place} Orders: {self.orders}")
+
+        if not DEBUG and len(orders_to_cancel) + len(orders_to_place) > 0:
+            self.place_orders(orders_to_place)
+            self.cancel_orders(orders_to_cancel)
+            self.last_orders_time = 0
+            self.orders = self.get_orders()
+
+
 def main():
     interval = 0 
     last = 0

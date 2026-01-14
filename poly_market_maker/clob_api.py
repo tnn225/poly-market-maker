@@ -28,7 +28,25 @@ FUNDER = os.getenv("FUNDER")
 FEE_RATE_BPS = int(os.getenv("FEE_RATE_BPS", "1000"))
 
 class ClobApi:
+    """
+    Singleton-ish API wrapper.
+
+    `ClobApi()` will always return the same instance and will only initialize the
+    underlying `ClobClient` once. This prevents repeated API key derivation when
+    multiple modules instantiate `ClobApi`.
+    """
+
+    _instance = None
+    _initialized = False
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
     def __init__(self):
+        if self.__class__._initialized:
+            return
         self.logger = logging.getLogger(self.__class__.__name__)
         self.fee_rate_bps = FEE_RATE_BPS
         self.client = ClobClient(
@@ -39,6 +57,7 @@ class ClobApi:
             funder=FUNDER  # Address that holds your funds
         )
         self.client.set_api_creds(self.client.create_or_derive_api_creds())
+        self.__class__._initialized = True
 
     def get_address(self):
         return self.client.get_address()
@@ -263,15 +282,15 @@ class ClobApi:
 
         response.raise_for_status()
 
-        print(f"response.json(): {response.json()}")
+        # print(f"response.json(): {response.json()}")
         positions = self._parse_positions(response.json())
-        print(f"positions: {positions}")
-        print(market.token_ids[MyToken.A], market.token_ids[MyToken.B])
+        # print(f"positions: {positions}")
+        # print(market.token_ids[MyToken.A], market.token_ids[MyToken.B])
         balances = {
             MyToken.A: positions.get(market.token_ids[MyToken.A]).get('size') if positions.get(market.token_ids[MyToken.A]) else 0,
             MyToken.B: positions.get(market.token_ids[MyToken.B]).get('size') if positions.get(market.token_ids[MyToken.B]) else 0,
         }
-        print(f"balances: {balances}")
+        self.logger.info(f"balances: {balances}")
         return balances
 
     def _parse_positions(self, positions: list) -> list:

@@ -15,7 +15,6 @@ load_dotenv()                           # Load environment variables from .env f
 
 client = ClobApi()
 engine = PriceEngine(symbol="btc/usd")
-engine.start()
 header = ["timestamp", "price", "bid", "ask"]
 
 # Ensure ./data exists
@@ -53,9 +52,14 @@ def main():
         time.sleep(0.1)
 
         data = engine.get_data()
+        if not data:
+            print("No data")
+            continue
+        
         target = data.get('target')
         timestamp = data.get('timestamp')
         price = data.get('price')
+        prob_est = data.get('up', data.get('prob_est'))
 
         if timestamp is None or timestamp == last:
             continue
@@ -72,16 +76,18 @@ def main():
             order_book.start()
 
         bid, ask = order_book.get_bid_ask(MyToken.A)
-        bid_b, ask_b = order_book.get_bid_ask(MyToken.B)
         
         row = [int(timestamp), price, bid, ask]
         write_row(row)
         
         if target is not None:
             delta = price - target
-            print(f"{seconds_left} {price} {delta:+.4f} Bid: {bid}, Ask: {ask}")
+            if prob_est is None:
+                print(f"{seconds_left} {price} {delta:+.4f} bid: {bid} ask: {ask} up: None")
+            else:
+                print(f"{seconds_left} {price} {delta:+.4f} bid: {bid} ask: {ask} up: {prob_est:.2f}")
         else:
-            print(f"{seconds_left} {price} Bid: {bid}, Ask: {ask}")
+            print(f"{seconds_left} {price} bid: {bid} ask: {ask}")
 
 if __name__ == "__main__":
     while True:

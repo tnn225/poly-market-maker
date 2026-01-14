@@ -17,7 +17,6 @@ setup_logging()
 clob_api = ClobApi()
 
 price_engine = PriceEngine(symbol="btc/usd")
-price_engine.start()
 
 class TradeManager:
     def __init__(self, interval: int):
@@ -68,12 +67,12 @@ class TradeManager:
         )
 
     def trade(self, delta: float):
-        if -1000 <= delta < -300:
+        if -1000 <= delta < -500:
             order = self.amm_a.get_buy_order(0.49, MIN_SIZE)
             print(f"trade delta: {delta} order: {order}")
             self.place_order(order)
 
-        if 300 <= delta <= 1000:
+        if 500 <= delta <= 1000:
             order = self.amm_b.get_buy_order(0.49, MIN_SIZE)
             print(f"trade delta: {delta} order: {order}")
             self.place_order(order)

@@ -6,38 +6,48 @@ import json
 import time
 from datetime import datetime, timezone
 import logging
-from poly_market_maker.intervals import Interval
-import pandas as pd
-import numpy as np
-from scipy.stats import norm
 
-from poly_market_maker.dataset import Dataset
+from poly_market_maker.prediction_engine import PredictionEngine
 
 logging.basicConfig(level=logging.INFO)
 
 class PriceEngine(threading.Thread):
+    _instances: dict[str, "PriceEngine"] = {}
+
+    def __new__(cls, symbol: str, *args, **kwargs):
+        key = (symbol or "").strip().lower()
+        inst = cls._instances.get(key)
+        if inst is None:
+            inst = super().__new__(cls)
+            cls._instances[key] = inst
+            inst._singleton_key = key
+            inst._initialized = False
+        return inst
+
     def __init__(self, symbol: str):
+        # Avoid re-initializing the same per-symbol singleton instance
+        if getattr(self, "_initialized", False):
+            return
+
         super().__init__(daemon=True)
 
+        self.prediction_engine = PredictionEngine()
+
         self.WS_URL = "wss://ws-live-data.polymarket.com"
-        self.symbol = symbol
+        self.symbol = (symbol or "").strip().lower()
 
         # Shared state
         self.price = None
         self.timestamp = None
         self.target = None
         self.interval = None
-
-
-        dataset = Dataset(days=1)
-        self.df = dataset.df[['timestamp', 'price', 'target', 'interval', 'seconds_left', 'log_return', 'sigma', 'z_score', 'prob_est']]
-
-        self._max_df_rows = 10_000
-        self._rolling_sigma_window = 60
+        self.prob_est = None
+        self.sigma = None
 
         date = datetime.fromtimestamp(int(time.time()), tz=timezone.utc).strftime("%Y-%m-%d")
         filename = f'./data/prices/price_{date}.csv'
         if os.path.exists(filename):
+            print(f"Reading prices from {filename}")
             self.read_prices(filename)
 
         # Thread safety
@@ -45,63 +55,8 @@ class PriceEngine(threading.Thread):
         self._stop_event = threading.Event()
         self.ws = None
 
-    def _append_prob_est_row_locked(self):
-        """
-        Append latest tick to self.df and compute prob_est.
-
-        Must be called with self.lock held.
-        """
-        if self.timestamp is None or self.price is None:
-            return
-
-        interval = self.interval
-        target = self.target
-
-        if interval is None:
-            interval = int(self.timestamp) // 900 * 900
-            self.interval = interval
-
-        # If we don't have a target for this interval yet, we can't compute prob_est.
-        if target is None:
-            return
-
-        seconds_left = 900 - (int(self.timestamp) - int(interval))
-        seconds_left = max(1, min(900, int(seconds_left)))
-
-        price = float(self.price)
-        target_f = float(target)
-        if price <= 0 or target_f <= 0:
-            return
-
-        log_return = float(np.log(price / target_f))
-
-        self.df.loc[len(self.df)] = {
-            "timestamp": int(self.timestamp),
-            "price": price,
-            "target": target_f,
-            "interval": int(interval),
-            "seconds_left": seconds_left,
-            "log_return": log_return,
-            "sigma": np.nan,
-            "z_score": np.nan,
-            "prob_est": np.nan,
-        }
-
-        # Keep memory bounded
-        if len(self.df) > self._max_df_rows:
-            self.df = self.df.iloc[-self._max_df_rows :].reset_index(drop=True)
-
-        # Rolling sigma on log_return (same spirit as Dataset)
-        self.df["sigma"] = self.df["log_return"].rolling(
-            window=self._rolling_sigma_window, min_periods=1
-        ).std()
-
-        # z_score scales volatility by time remaining
-        time_factor = np.sqrt(self.df["seconds_left"].astype(float) / 60.0)
-        sigma_scaled = self.df["sigma"].replace(0, np.nan)
-        self.df["z_score"] = self.df["log_return"] / (sigma_scaled * time_factor)
-        self.df["z_score"] = self.df["z_score"].fillna(0.0)
-        self.df["prob_est"] = norm.cdf(self.df["z_score"].astype(float))
+        self._initialized = True
+        self.start()
 
     def read_prices(self, filename):
         with open(filename, mode='r', newline='') as file:
@@ -116,10 +71,12 @@ class PriceEngine(threading.Thread):
                 # print(f"Data Row: {row}")
                 timestamp = int(row[0])
                 price = float(row[1])
+                self.prediction_engine.add_price(price)
                 if timestamp % 900 == 0:
+
                     self.interval = timestamp
                     self.target = price
-                    # print(f"Read target {self.target} for interval {self.interval}")
+                    print(f"Read target {self.target} for interval {self.interval}")
 
     # ==========================================================
     #                WEBSOCKET CALLBACKS
@@ -170,6 +127,7 @@ class PriceEngine(threading.Thread):
         with self.lock:
             self.timestamp = round(ts / 1000)
             self.price = value
+            self.prediction_engine.add_price(value)
             current_interval = int(self.timestamp) // 900 * 900
             if self.interval != current_interval:
                 self.interval = current_interval
@@ -178,7 +136,6 @@ class PriceEngine(threading.Thread):
             elif int(self.timestamp) % 900 == 0:
                 self.target = self.price
 
-            self._append_prob_est_row_locked()
 
     def on_error(self, ws, error):
         logging.error(f"WebSocket error: {error}")
@@ -217,6 +174,9 @@ class PriceEngine(threading.Thread):
     #                    EXTERNAL GETTERS
     # ==========================================================
 
+    def get_sigma(self):
+        return self.prediction_engine.get_sigma()
+
     def get_price(self):
         with self.lock:
             return self.price
@@ -235,21 +195,18 @@ class PriceEngine(threading.Thread):
         
     def get_data(self):
         with self.lock:
-            prob_est = None
-            if not self.df.empty and "prob_est" in self.df.columns:
-                prob_est = float(self.df["prob_est"].iloc[-1])
+            if self.timestamp is None or self.price is None or self.target is None:
+                return None
+            seconds_left = 900 - (int(self.timestamp) % 900)
+            up = self.prediction_engine.get_probability(self.price, self.target, seconds_left)
             return {
                 'timestamp': self.timestamp,
                 'price': self.price,
-                'target': self.target,
-                'delta': self.price - self.target if self.target and self.price else None,
+                'target': self.target,  
                 'interval': self.interval,
-                'prob_est': prob_est,
+                'up': up,
             }
-
-    def get_df(self) -> pd.DataFrame:
-        with self.lock:
-            return self.df.copy()
+            return data
 
 # ==========================================================
 #                 HOW TO USE THE ENGINE
@@ -257,16 +214,23 @@ class PriceEngine(threading.Thread):
 
 if __name__ == "__main__":
     price_engine = PriceEngine(symbol="btc/usd")
-    price_engine.start()
 
     print("🚀 PriceEngine started...")
 
     try:
         while True:
             data = price_engine.get_data()
+
             if data and data['timestamp'] is not None and data['price'] is not None and data['target'] is not None  :
+                price = data.get('price')
+                target = data.get('target')
+                delta = price - target
                 seconds_left = 900 - (int(data['timestamp']) % 900)
-                print(f"{seconds_left} {data['price']:.2f} {data['delta']:+.2f} up: {data['prob_est']:.2f}")
+                up = data.get("up")
+                if up is None:
+                    print(f"{seconds_left} {price:.2f} {delta:+.2f} up: None")
+                else:
+                    print(f"{seconds_left} {price:.2f} {delta:+.2f} up: {up:.2f}")
             else:
                 print("No data")
             time.sleep(1)

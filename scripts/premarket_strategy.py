@@ -39,7 +39,7 @@ def strategy(df: pd.DataFrame):
     Returns:
       (selected_df, summary_dict)
     """
-    spread = 0.05
+    spread = 0.1
 
     required = {"prob_est", "bid", "is_up"}
     missing = [c for c in sorted(required) if c not in df.columns]

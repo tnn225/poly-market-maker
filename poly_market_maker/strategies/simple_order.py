@@ -21,8 +21,8 @@ class SimpleOrder:
         self.p_min = 0.01
         self.p_max = 0.99
         self.delta = 0.01
-        self.spread = 0.05
-        self.depth = 5
+        self.spread = 0.0
+        self.depth = 10
         self.max_collateral = 100
         self.balance = 0
         self.imbalance = 0
@@ -39,9 +39,9 @@ class SimpleOrder:
         # print(f"  set_buy_prices self.depth: {self.depth} bid: {bid:.2f} imbalance: {imbalance:.2f}")
         for i in range(int(self.depth)):
             # price = min(round(bid - i * self.delta, 2), 0.49)
-            price = round(bid - i * self.delta, 2)
-            if self.p_min <= price <= self.p_max and price <= self.up - self.spread:
-                if imbalance > 0:
+            price = round(bid - i * self.delta, 2) if bid >= 0.5 else round(bid - i * self.delta - self.spread, 2)
+            if self.p_min <= price <= self.p_max:
+                if imbalance > SIZE:
                     imbalance -= SIZE
                     continue
                 self.buy_prices.append(price)
