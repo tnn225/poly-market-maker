@@ -112,7 +112,7 @@ class BaseStrategy:
         return self.balances
 
     def get_orders(self) -> list[Order]:
-        if time.time() - self.last_orders_time < 5:
+        if time.time() - self.last_orders_time < 3:
             return self.orders
         
         self.balances = self.get_balances()
@@ -136,6 +136,10 @@ class BaseStrategy:
     def place_orders(self, orders: list[Order]):
         for order in orders:
             self.place_order(order)
+    
+    def place_orders(self, orders: list[Order]):
+        for order in orders:
+            self.place_order(order)
 
     def place_order(self, new_order: Order) -> Order:
         order_id = self.clob_api.place_order(
@@ -146,7 +150,5 @@ class BaseStrategy:
         )
 
     def cancel_orders(self, orders: list[Order]) -> list[Order]:
-        for order in orders:
-            self.clob_api.cancel_order(order.id)
-        return orders
-
+        order_ids = [order.id for order in orders]
+        self.clob_api.cancel_orders(order_ids)

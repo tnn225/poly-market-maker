@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 def main():
     maker = None
     while True:
-        now = int(time.time())
+        now = int(time.time()) + 10
         interval = now // 900 * 900
         if maker is None or interval != maker.start_time:
             maker = BalanceStrategy(interval=interval)

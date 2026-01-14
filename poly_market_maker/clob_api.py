@@ -5,6 +5,7 @@ import requests
 
 from poly_market_maker.my_token import MyToken
 from poly_market_maker.market import Market
+from poly_market_maker.order import Order
 from poly_market_maker.utils.common import randomize_default_price
 from py_clob_client.client import ClobClient, ApiCreds, OrderArgs, OpenOrderParams
 from py_clob_client.clob_types import OrderType as CLOBOrderType
@@ -49,6 +50,7 @@ class ClobApi:
             return
         self.logger = logging.getLogger(self.__class__.__name__)
         self.fee_rate_bps = FEE_RATE_BPS
+        
         self.client = ClobClient(
             HOST,  # The CLOB API endpoint
             key=PRIVATE_KEY,  # Your wallet's private key
@@ -56,6 +58,9 @@ class ClobApi:
             signature_type=1,  # 1 for email/Magic wallet signatures
             funder=FUNDER  # Address that holds your funds
         )
+        # Turn off DEBUG logging for ClobClient
+        logging.getLogger("py_clob_client").setLevel(logging.ERROR)
+
         self.client.set_api_creds(self.client.create_or_derive_api_creds())
         self.__class__._initialized = True
 
@@ -160,6 +165,37 @@ class ClobApi:
                 method="create_and_post_order", status="error"
             ).observe((time.time() - start_time))
         return None
+
+    def place_orders(self, orders: list) -> list:
+        """
+        Place multiple orders using `post_orders`, which signs and posts each one.
+
+        Accepts either:
+        - poly_market_maker.order.Order objects (will be converted), or
+        - dicts with keys: price, size, side, token_id, optional fee_rate_bps.
+        """
+        if not orders:
+            return []
+
+        payloads = []
+        for idx, order in enumerate(orders):
+            if isinstance(order, Order):
+                payloads.append(
+                    {
+                        "price": order.price,
+                        "size": order.size,
+                        "side": order.side.value,
+                        "token_id": order.token if isinstance(order.token, str) else order.token.value if hasattr(order.token, "value") else order.token,
+                    }
+                )
+            elif isinstance(order, dict):
+                payloads.append(order)
+            else:
+                self.logger.error(
+                    f"Unsupported order type at position {idx}: {order}"
+                )
+
+        return self.post_orders(payloads)
 
     def cancel_order(self, order_id) -> bool:
         self.logger.info(f"Cancelling order {order_id}...")
@@ -313,56 +349,6 @@ class ClobApi:
                 'end_date': pos.get('endDate'),
             }
         return parsed
-
-    def post_orders(self, orders: list, order_type: CLOBOrderType = CLOBOrderType.GTC):
-        """
-        Post multiple orders (compat wrapper).
-
-        Your installed `py_clob_client` version does not support `post_orders()` / `PostOrdersArgs`,
-        so this method posts orders one-by-one via `client.post_order()`.
-
-        Accepts either:
-        - a list of dicts with keys: price, size, side, token_id (creates + signs), OR
-        - a list of already-created signed orders (posts directly)
-
-        Example dict:
-            {"price": 0.01, "size": 5.0, "side": BUY, "token_id": "8861..."}
-        """
-        if not orders:
-            return []
-
-        responses = []
-        for o in orders:
-            if isinstance(o, dict):
-                try:
-                    price = float(o["price"])
-                    size = float(o["size"])
-                    side = o["side"]
-                    token_id = str(o["token_id"])
-                    fee_rate_bps = int(o.get("fee_rate_bps", self.fee_rate_bps))
-                except Exception as e:
-                    raise ValueError(
-                        f"Invalid order dict for post_orders (expected keys: price,size,side,token_id). Got: {o}"
-                    ) from e
-
-                signed = self.client.create_order(
-                    OrderArgs(
-                        price=price,
-                        size=size,
-                        side=side,
-                        token_id=token_id,
-                        fee_rate_bps=fee_rate_bps,
-                    )
-                )
-                responses.append(self.client.post_order(signed, orderType=order_type))
-            else:
-                # Assume `o` is already a signed order object produced by client.create_order(...)
-                responses.append(self.client.post_order(o, orderType=order_type))
-
-        return responses
-
-    # def post_orders(self, orders: list):
-    #     pass
 
 def main():
     clob_api = ClobApi()

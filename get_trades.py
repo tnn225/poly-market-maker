@@ -103,7 +103,7 @@ def main():
     now = int(time.time())
     for i in range(1):
         interval = (now // 900 - i - 1) * 900
-        interval = 1768383900
+        interval = 1768410000
         market = client.get_market(interval) 
 
         trades = fetch_trades([str(market.condition_id)], market.token_id(MyToken.A))

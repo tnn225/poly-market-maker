@@ -14,14 +14,13 @@ from typing import Tuple
 from poly_market_maker.strategies.base_strategy import BaseStrategy
 
 DEBUG = False
-MAX_BALANCE = 2000
-
+MAX_BALANCE = 5000
 
 class BalanceStrategy(BaseStrategy):
     def __init__(self, interval: int):
         super().__init__(interval)
 
-        self.depth = 10
+        self.depth = 7
         self.delta = 0.01
         self.min_spread = 0.0              # minimum total spread
         self.half_spread = self.min_spread / 2
@@ -38,9 +37,10 @@ class BalanceStrategy(BaseStrategy):
             return
 
         delta = self.price - self.target
-        inventory = self.balances[MyToken.A] - self.balances[MyToken.B] - delta
-        self.logger.info(f"trade {self.seconds_left} seconds left price: {self.price:.4f} {delta:+.4f} inventory: {inventory:+.2f} bid: {bid:.2f}, ask: {ask:.2f}")
- 
+        inventory = self.balances[MyToken.A] - self.balances[MyToken.B] - delta * 2 
+        
+        self.logger.info(f"trade {self.seconds_left} seconds left price: {self.price:.4f} {delta:+.4f} bid: {bid:.2f}, ask: {ask:.2f}")
+        self.logger.info(f"  inventory: {inventory:+.2f} balances: {self.balances[MyToken.A]:.2f} {self.balances[MyToken.B]:.2f}")
         self.orders = self.get_orders()
 
         orders = []
@@ -79,9 +79,15 @@ class BalanceStrategy(BaseStrategy):
             self.last_orders_time = 0
             self.orders = self.get_orders()
 
+    def wait_to_enter(self):
+        while True:
+            time.sleep(1)
+            self.seconds_left = self.end_time - int(time.time())
+
     def run(self):
         while int(time.time()) <= self.end_time:
             time.sleep(1)
+            self.seconds_left = self.end_time - int(time.time())
 
             data = self.price_engine.get_data()
             if data is None:
@@ -94,7 +100,6 @@ class BalanceStrategy(BaseStrategy):
             if self.price is None or self.target is None:
                 self.logger.error(f"No price or target")
                 return
-            self.seconds_left = self.end_time - int(time.time())
             self.trade()
 
         self.order_book_engine.stop()
