@@ -8,7 +8,8 @@ from py_clob_client.clob_types import TradeParams
 from poly_market_maker.my_token import MyToken
 
 # ---------------- CONFIG ----------------
-ADDRESS = "0x6031b6eed1c97e853c6e0f03ad3ce3529351f96d"
+ADDRESS = "0x6031b6eed1c97e853c6e0f03ad3ce3529351f96d" # Gabagol
+ADDRESS = "0xcc553b67cfa321f74c56515727ebe16dcb137cb3" #hai15617
 IS_MAKER = False    # True = maker trades, False = taker trades
 # ----------------------------------------
 
@@ -103,7 +104,7 @@ def main():
     now = int(time.time())
     for i in range(1):
         interval = (now // 900 - i - 1) * 900
-        interval = 1768410000
+        interval = 1768368600
         market = client.get_market(interval) 
 
         trades = fetch_trades([str(market.condition_id)], market.token_id(MyToken.A))

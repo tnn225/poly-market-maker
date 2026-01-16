@@ -225,8 +225,8 @@ class Dataset:
         #   z_score = log_return / (sigma * sqrt(seconds_left))
         time_factor = np.sqrt(self.df["seconds_left"].astype(float))
         # Avoid division by zero
-        sigma_scaled = self.df['sigma'].replace(0, np.nan)
-        self.df['z_score'] = self.df['log_return'] / (sigma_scaled * time_factor)
+        sigma_scaled = self.df['sigma'].replace(0, np.nan) * time_factor
+        self.df['z_score'] = self.df['log_return'] / sigma_scaled
         # Fill NaN values (where sigma was 0) with 0
         self.df['z_score'] = self.df['z_score'].fillna(0)
         

@@ -304,13 +304,13 @@ class ClobApi:
             self.client.get_collateral_address(),
         )
 
-    def get_balances(self, market: Market):
+    def get_balances(self, market: Market, user: str = FUNDER):
         params = {
             "sizeThreshold": 1,
             "limit": 100,
             "sortBy": "TOKENS",
             "sortDirection": "DESC",
-            "user": FUNDER,
+            "user": user,
             "market": market.condition_id,
         }
         url = "https://data-api.polymarket.com/positions"
@@ -352,8 +352,9 @@ class ClobApi:
 
 def main():
     clob_api = ClobApi()
-    market = clob_api.get_market(1766836800)
-    positions = clob_api.get_balances(market)
+    market = clob_api.get_market(1768463100)
+    user = "0xe01ae9d586b428c251043368f808e678d4c4132c" 
+    positions = clob_api.get_balances(market, user)
     print(f"Positions: {positions}")
 
 if __name__ == "__main__":

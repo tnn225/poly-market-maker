@@ -20,10 +20,15 @@ class BalanceStrategy(BaseStrategy):
     def __init__(self, interval: int):
         super().__init__(interval)
 
-        self.depth = 7
-        self.delta = 0.01
+        self.depth = 3
+        self.delta = 0.05
         self.min_spread = 0.0              # minimum total spread
         self.half_spread = self.min_spread / 2
+
+    def is_imbalance(self, delta: float, inventory: float) -> bool:
+        if delta >= 0:
+            return inventory < 0
+
 
     def trade(self):
         if self.balances[MyToken.A] + self.balances[MyToken.B] > MAX_BALANCE:
@@ -74,8 +79,8 @@ class BalanceStrategy(BaseStrategy):
         self.logger.info(f"  Orders to cancel: {len(orders_to_cancel)} Orders to place: {len(orders_to_place)}")
         self.logger.info(f"  Orders to cancel: {orders_to_cancel} Orders to place: {orders_to_place}")
         if not DEBUG and len(orders_to_cancel) + len(orders_to_place) > 0:
-            self.cancel_orders(orders_to_cancel)
             self.place_orders(orders_to_place)
+            self.cancel_orders(orders_to_cancel)
             self.last_orders_time = 0
             self.orders = self.get_orders()
 

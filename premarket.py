@@ -10,7 +10,7 @@ from poly_market_maker.order import Side
 from poly_market_maker.strategies.simple_order import SimpleOrder
 
 MAX_SHARES = 500
-MIN_SIZE = 100
+MIN_SIZE = 200
 
 setup_logging()
 

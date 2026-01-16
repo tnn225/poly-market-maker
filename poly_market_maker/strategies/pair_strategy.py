@@ -14,7 +14,7 @@ from typing import Tuple
 from poly_market_maker.strategies.base_strategy import BaseStrategy
 
 DEBUG = False
-MAX_BALANCE = 1000
+MAX_BALANCE = 5000
 
 class OrderType:
     def __init__(self, order: Order):
@@ -44,10 +44,7 @@ class PairStrategy(BaseStrategy):
         self.price_engine = PriceEngine(symbol="btc/usd")
         self.market = self.clob_api.get_market(interval)
 
-        self.depth = 5
-        self.delta = 0.05
-        self.min_spread = 0.1              # minimum total spread
-        self.half_spread = self.min_spread / 2
+        self.spread = 0.03
 
         self.start_time = interval
         self.end_time = interval + 900
@@ -87,33 +84,6 @@ class PairStrategy(BaseStrategy):
         self.order_types = set(OrderType(order) for order in self.orders)
         self.last_orders_time = time.time()
         return self.orders
-
-
-    def calculate_skew(self, inventory: float) -> float:
-        """
-        Map inventory in [-100, 100] to a normalized skew in [-1.0, 1.0].
-
-        Negative inventory => negative skew, positive inventory => positive skew.
-        """
-        return 1 if inventory >= 0 else -1
-
-    def calculate_asymmetric_quotes(self, bid: float, ask: float, inventory: float) -> Tuple[float, float]:
-        """
-        Compute bid/ask for token A using inventory skew.
-
-        Convention:
-        - inventory > 0 means we're long A (YES) relative to B (NO)
-          -> shift reservation DOWN (buy A less aggressively, buy B more aggressively).
-        - inventory < 0 means we're short A
-          -> shift reservation UP.
-        """
-        skew = self.calculate_skew(inventory)  # [-1, 1]
-
-        # Shift reservation price (bounded)
-        bid_price = bid - (1 + skew) * self.half_spread
-        ask_price = ask + (1 - skew) * self.half_spread
-
-        return bid_price, ask_price
 
     def is_valid_order(self, order: Order) -> bool:
         order_type = OrderType(order)
@@ -191,25 +161,26 @@ class PairStrategy(BaseStrategy):
             self.logger.error(f"No bid or ask")
             return
 
-        inventory = self.balances[MyToken.A] - self.balances[MyToken.B] - self.delta
-        bid_price, ask_price = self.calculate_asymmetric_quotes(bid, ask, inventory)
+        delta = self.price - self.target
+        inventory = self.balances[MyToken.A] - self.balances[MyToken.B] - delta * 2
         self.logger.info(f"bid: {bid:.4f}, ask: {ask:.4f} Inventory: {inventory:+.2f} ")
-        self.logger.info(f"bid_price: {bid_price:.4f}, ask_price : {ask_price:.4f}")
 
         self.orders = self.get_orders()
 
         orders = []
-        for i in range(self.depth):
-            buy_price = round(bid_price - i * self.delta, 2)
-            sell_price = round(1 - ask_price - i * self.delta, 2)
-            if 0.01 <= buy_price <= 0.99 and 0.01 <= sell_price <= 0.99:
-                buy_order = Order(price=buy_price, size=MIN_SIZE, side=Side.BUY, token=MyToken.A)
-                sell_order = Order(price=sell_price, size=MIN_SIZE, side=Side.BUY, token=MyToken.B)
-                if self.is_valid_order(buy_order) and self.is_valid_order(sell_order):
-                    orders.append(buy_order)
-                    orders.append(sell_order)
-                    self.pairs[buy_order] = sell_order
-                    self.pairs[sell_order] = buy_order
+
+        buy_up = 1 if (delta >= 0 and inventory == 0) or inventory < 0 else 0
+
+        buy_price = round(bid - self.spread * (1 - buy_up), 2)
+        sell_price = round(1 - ask - self.spread * buy_up, 2)
+        if 0.01 <= buy_price <= 0.99 and 0.01 <= sell_price <= 0.99:
+            buy_order = Order(price=buy_price, size=MIN_SIZE, side=Side.BUY, token=MyToken.A)
+            sell_order = Order(price=sell_price, size=MIN_SIZE, side=Side.BUY, token=MyToken.B)
+            if self.is_valid_order(buy_order) and self.is_valid_order(sell_order):
+                orders.append(buy_order)
+                orders.append(sell_order)
+                self.pairs[buy_order] = sell_order
+                self.pairs[sell_order] = buy_order
 
         self.logger.info(f"Orders: {orders}")
         if not DEBUG and len(orders) > 0:
@@ -231,7 +202,6 @@ class PairStrategy(BaseStrategy):
             if self.price is None or self.target is None:
                 self.logger.error(f"No price or target")
                 return
-            self.delta = self.price - self.target
             self.trade()
 
         self.order_book_engine.stop()

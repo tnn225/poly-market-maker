@@ -15,8 +15,6 @@ from scipy.stats import norm
 WINDOW = 900
 logger = logging.getLogger(__name__)
 
-SECONDS_PER_YEAR = 365.0 * 24.0 * 60.0 * 60.0
-
 class PredictionEngine:
     def __init__(self):
         self.prices = deque(maxlen=WINDOW)
@@ -38,18 +36,14 @@ class PredictionEngine:
         return float(sigma) #  * np.sqrt(SECONDS_PER_YEAR))
 
     def get_probability(self, price, target, seconds_left):
-        sigma = self.get_sigma()
-        # Remaining-time vol using annualized sigma:
-        # sigma_rem = sigma_annual * sqrt(seconds_left / seconds_per_year)
-        time_factor = np.sqrt(float(seconds_left)) # / np.sqrt(SECONDS_PER_YEAR)
-        sigma = sigma * time_factor
-        if sigma == 0:
-            return price >= target
         if seconds_left <= 0:
             return price >= target
-        log_return = np.log(price / target) 
-        z_score = log_return / sigma
-        probability = norm.cdf(z_score)
+        time_factor = np.sqrt(float(seconds_left))
+        sigma = self.get_sigma() * time_factor
+        if sigma == 0:
+            return price >= target
+        log_return = np.log(price / target)
+        probability = norm.cdf(log_return / sigma)
         return probability
     
 
@@ -64,12 +58,14 @@ def main():
         bid = row['bid']
         ask = row['ask']
         seconds_left = row['seconds_left']
+        interval = row['interval']
         prediction_engine.add_price(price)
 
         delta = price - target
         up = prediction_engine.get_probability(price, target, seconds_left)  
         sigma = prediction_engine.get_sigma()
-        print(f"{price} {delta:+.4f} sigma: {sigma:.6f} bid: {bid:.2f} up: {up:.2f}")
+        if bid <= 0.05 and up > 0.05:
+            print(f"interval {interval} {seconds_left} price: {price} {delta:+.4f} sigma: {sigma:.6f} bid: {bid:.2f} up: {up:.2f}")
     
 
 if __name__ == "__main__":
