@@ -20,15 +20,8 @@ class BalanceStrategy(BaseStrategy):
     def __init__(self, interval: int):
         super().__init__(interval)
 
-        self.depth = 3
-        self.delta = 0.05
-        self.min_spread = 0.0              # minimum total spread
-        self.half_spread = self.min_spread / 2
-
-    def is_imbalance(self, delta: float, inventory: float) -> bool:
-        if delta >= 0:
-            return inventory < 0
-
+        self.depth = 5
+        self.delta = 0.01
 
     def trade(self):
         if self.balances[MyToken.A] + self.balances[MyToken.B] > MAX_BALANCE:
@@ -42,7 +35,7 @@ class BalanceStrategy(BaseStrategy):
             return
 
         delta = self.price - self.target
-        inventory = self.balances[MyToken.A] - self.balances[MyToken.B] - delta * 2 
+        inventory = self.balances[MyToken.A] - self.balances[MyToken.B] # - delta * 2 
         
         self.logger.info(f"trade {self.seconds_left} seconds left price: {self.price:.4f} {delta:+.4f} bid: {bid:.2f}, ask: {ask:.2f}")
         self.logger.info(f"  inventory: {inventory:+.2f} balances: {self.balances[MyToken.A]:.2f} {self.balances[MyToken.B]:.2f}")
@@ -51,6 +44,8 @@ class BalanceStrategy(BaseStrategy):
         orders = []
         for i in range(self.depth):
             buy_price = round(bid - i * self.delta, 2)
+            sell_price = round(1 - ask - i * self.delta, 2)
+
             if 0.01 <= buy_price <= 0.99:
                 buy_order = Order(price=buy_price, size=MIN_SIZE, side=Side.BUY, token=MyToken.A)
                 if inventory < -MIN_SIZE:
@@ -58,16 +53,12 @@ class BalanceStrategy(BaseStrategy):
                     orders.append(buy_order)
                     continue
             
-            sell_price = round(1 - ask - i * self.delta, 2)
             if 0.01 <= sell_price <= 0.99:
                 sell_order = Order(price=sell_price, size=MIN_SIZE, side=Side.BUY, token=MyToken.B)
                 if inventory > MIN_SIZE:
                     inventory -= MIN_SIZE                
                     orders.append(sell_order)
                     continue
-
-            buy_price = round(bid - i * self.delta - self.half_spread, 2)
-            sell_price = round(1 - ask - i * self.delta - self.half_spread, 2)
 
             if 0.01 <= sell_price <= 0.99 and 0.01 <= buy_price <= 0.99:
                 buy_order = Order(price=buy_price, size=MIN_SIZE, side=Side.BUY, token=MyToken.A)
@@ -83,11 +74,6 @@ class BalanceStrategy(BaseStrategy):
             self.cancel_orders(orders_to_cancel)
             self.last_orders_time = 0
             self.orders = self.get_orders()
-
-    def wait_to_enter(self):
-        while True:
-            time.sleep(1)
-            self.seconds_left = self.end_time - int(time.time())
 
     def run(self):
         while int(time.time()) <= self.end_time:

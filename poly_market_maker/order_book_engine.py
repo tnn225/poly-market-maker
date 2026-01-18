@@ -123,7 +123,7 @@ class OrderBookEngine(threading.Thread):
     def get_bid_ask(self, token: MyToken):
         token_id = self.market.token_id(token)
         with self.lock:
-            return self.best_bid[token_id], self.best_ask[token_id]
+            return round(self.best_bid[token_id], 2), round(self.best_ask[token_id], 2)
 
 # ==========================================================
 #               HOW TO USE THE ENGINE

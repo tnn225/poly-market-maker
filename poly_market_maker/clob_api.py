@@ -51,6 +51,29 @@ class ClobApi:
         self.logger = logging.getLogger(self.__class__.__name__)
         self.fee_rate_bps = FEE_RATE_BPS
         
+        # Turn off DEBUG logging for ClobClient and underlying HTTP clients
+        # Configure before ClobClient instantiation to catch all initialization logs
+        http_loggers = [
+            "py_clob_client",
+            "httpx",
+            "httpcore",
+            "httpcore.http2",
+            "httpcore.http11",
+            "h2",
+            "h2.connection",
+            "h2.streams",
+            "h2.events",
+            "h2.settings",
+            "h2.frame_buffer",
+            "hpack",
+            "hpack.huffman",
+            "hpack.table",
+            "urllib3",
+            "urllib3.connectionpool",
+        ]
+        for logger_name in http_loggers:
+            logging.getLogger(logger_name).setLevel(logging.ERROR)
+        
         self.client = ClobClient(
             HOST,  # The CLOB API endpoint
             key=PRIVATE_KEY,  # Your wallet's private key
@@ -58,8 +81,6 @@ class ClobApi:
             signature_type=1,  # 1 for email/Magic wallet signatures
             funder=FUNDER  # Address that holds your funds
         )
-        # Turn off DEBUG logging for ClobClient
-        logging.getLogger("py_clob_client").setLevel(logging.ERROR)
 
         self.client.set_api_creds(self.client.create_or_derive_api_creds())
         self.__class__._initialized = True
@@ -175,6 +196,18 @@ class ClobApi:
         - dicts with keys: price, size, side, token_id, optional fee_rate_bps.
         """
         if not orders:
+            return []
+
+        # Place the first order immediately
+        self.place_order(orders[0])
+        orders = orders[1:]
+
+        if not orders:
+            return []
+
+        if len(orders) > 15:
+            self.place_orders(orders[:15])
+            self.place_orders(orders[15:])
             return []
 
         payloads = []

@@ -162,7 +162,7 @@ class PairStrategy(BaseStrategy):
             return
 
         delta = self.price - self.target
-        inventory = self.balances[MyToken.A] - self.balances[MyToken.B] - delta * 2
+        inventory = self.balances[MyToken.A] - self.balances[MyToken.B] #  - delta * 2
         self.logger.info(f"bid: {bid:.4f}, ask: {ask:.4f} Inventory: {inventory:+.2f} ")
 
         self.orders = self.get_orders()

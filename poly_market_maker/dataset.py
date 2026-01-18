@@ -8,10 +8,6 @@ import logging
 
 from poly_market_maker.intervals import Interval
 from scipy.stats import norm
-from sklearn.metrics import (
-    confusion_matrix,
-    roc_auc_score,
-)
 
 SPREAD = 0.01
 DAYS = 30
@@ -188,6 +184,9 @@ class Dataset:
         self.df['seconds_left'] = 900 - (self.df['timestamp'] - self.df['interval'])
         self.df['time'] = self.df['seconds_left'].astype(float) / 900.
         self.df['seconds_left_log'] = np.log(self.df['seconds_left'])
+        # Calculate hour of the week: (timestamp / 3600) % 168
+        # 168 hours = 7 days * 24 hours, gives value 0-167
+        self.df['hour_of_the_week'] = (self.df['timestamp'] // 3600) % 168
                 
         # Sort by timestamp to ensure proper rolling window calculation
         self.df = self.df.sort_values('timestamp').reset_index(drop=True)
@@ -214,24 +213,24 @@ class Dataset:
         self.df["sigma"] = sigma_s.to_numpy()
         self.df["sigma"] = self.df["sigma"].fillna(0.0)
 
-        # Annualize per-second volatility: sigma_annual = sigma * sqrt(seconds_per_year)
-        seconds_per_year = 365.0 * 24.0 * 60.0 * 60.0
-        self.df["sigma_annual"] = self.df["sigma"] * np.sqrt(seconds_per_year)
+        # Calculate z_score: standardized log_return accounting for volatility and time remaining
+        # z_score = log_return / (sigma * sqrt(seconds_left))
+        # This represents how many standard deviations the return is from expected (0)
         
-        # Estimate z_score from log_return, sigma, and seconds_left
-        # If sigma is per-second volatility, remaining-time volatility scales as:
-        #   sigma_rem = sigma * sqrt(seconds_left)
-        # So:
-        #   z_score = log_return / (sigma * sqrt(seconds_left))
-        time_factor = np.sqrt(self.df["seconds_left"].astype(float))
-        # Avoid division by zero
-        sigma_scaled = self.df['sigma'].replace(0, np.nan) * time_factor
-        self.df['z_score'] = self.df['log_return'] / sigma_scaled
-        # Fill NaN values (where sigma was 0) with 0
-        self.df['z_score'] = self.df['z_score'].fillna(0)
+        # Ensure seconds_left is at least 1 to avoid division issues
+        seconds_left_safe = self.df["seconds_left"].astype(float)
+        time_factor = np.sqrt(seconds_left_safe)
+                    
+        # Calculate z_score
+        sigma_scaled = self.df["sigma"] * time_factor
+        self.df["z_score"] = self.df["log_return"] / sigma_scaled        
         
-        # Use norm.cdf to get probability estimates
+        # Calculate probability estimate using cumulative distribution function
+        # prob_est = P(Z <= z_score) = norm.cdf(z_score)
+        # This gives the probability that the price will be at or below the target
         self.df["prob_est"] = norm.cdf(self.df["z_score"])
+
+        
 
     def _train_test_split(self, test_ratio: float = 0.2):
         df_sorted = self.df.sort_values('timestamp').reset_index(drop=True)

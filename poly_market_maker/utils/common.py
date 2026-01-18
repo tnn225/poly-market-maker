@@ -42,6 +42,27 @@ def setup_logging(
     # Suppress requests and web3 verbose logs
     logging.getLogger("requests").setLevel(logging.INFO)
     logging.getLogger("web3").setLevel(logging.INFO)
+    # Suppress HTTP client DEBUG logs (httpx, httpcore, h2, hpack)
+    http_loggers = [
+        "py_clob_client",
+        "httpx",
+        "httpcore",
+        "httpcore.http2",
+        "httpcore.http11",
+        "h2",
+        "h2.connection",
+        "h2.streams",
+        "h2.events",
+        "h2.settings",
+        "h2.frame_buffer",
+        "hpack",
+        "hpack.huffman",
+        "hpack.table",
+        "urllib3",
+        "urllib3.connectionpool",
+    ]
+    for logger_name in http_loggers:
+        logging.getLogger(logger_name).setLevel(logging.ERROR)
 
 
 def setup_web3(rpc_url, private_key):

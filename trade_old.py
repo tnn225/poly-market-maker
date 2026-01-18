@@ -13,7 +13,6 @@ from poly_market_maker.utils import setup_logging
 from poly_market_maker.clob_api import ClobApi
 from poly_market_maker.order import Side
 from poly_market_maker.strategies.simple_order import SimpleOrder
-from poly_market_maker.strategies.simple_strategy import SimpleStrategy
 
 from dotenv import load_dotenv          # Environment variable management
 load_dotenv()                           # Load environment variables from .env file

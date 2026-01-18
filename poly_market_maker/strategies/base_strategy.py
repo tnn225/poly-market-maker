@@ -72,7 +72,7 @@ class BaseStrategy:
 
         for order_type in expected_order_types:
             open_orders = [
-                order for order in self.orders if OrderType(order) == order_type
+                order for order in self.orders if OrderType(order) == order_type and order.size == MIN_SIZE
             ]
             open_size = sum(order.size for order in open_orders)
             expected_size = sum(
@@ -142,11 +142,18 @@ class BaseStrategy:
             self.place_order(order)
 
     def place_order(self, new_order: Order) -> Order:
-        order_id = self.clob_api.place_order(
+        order = self.clob_api.place_order(
             price=new_order.price,
             size=new_order.size,
             side=new_order.side.value,
             token_id=self.market.token_id(new_order.token),
+        )
+        return Order(
+            price=new_order.price,
+            size=new_order.size,
+            side=new_order.side,
+            id=order,
+            token=new_order.token,
         )
 
     def cancel_orders(self, orders: list[Order]) -> list[Order]:
