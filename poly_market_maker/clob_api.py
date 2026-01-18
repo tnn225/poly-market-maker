@@ -11,7 +11,7 @@ from py_clob_client.client import ClobClient, ApiCreds, OrderArgs, OpenOrderPara
 from py_clob_client.clob_types import OrderType as CLOBOrderType
 from py_clob_client.exceptions import PolyApiException
 
-from poly_market_maker.constants import OK
+from poly_market_maker.constants import OK, DEBUG
 from poly_market_maker.metrics import clob_requests_latency
 
 DEFAULT_PRICE = 0.5
@@ -154,6 +154,9 @@ class ClobApi:
         self.logger.info(
             f"Placing a new order: Order[price={price},size={size},side={side},token_id={token_id}]"
         )
+        if DEBUG:
+            return None
+
         start_time = time.time()
         try:
             resp = self.client.create_and_post_order(

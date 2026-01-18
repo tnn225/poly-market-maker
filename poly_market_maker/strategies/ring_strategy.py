@@ -21,35 +21,28 @@ class RingStrategy(BaseStrategy):
         super().__init__(interval)
 
         self.spread = 0.03  # Spread for paired orders
-        self.ring_a = RingOrder(token=MyToken.A)
-        self.ring_b = RingOrder(token=MyToken.B)
+        self.ring_a = RingOrder(token=MyToken.A, market=self.market)
+        self.ring_b = RingOrder(token=MyToken.B, market=self.market)
         self.ring_a.set_other(self.ring_b)
         self.ring_b.set_other(self.ring_a)
 
     def trade(self):
+        self.balances = self.get_balances()
         if self.balances[MyToken.A] + self.balances[MyToken.B] > MAX_BALANCE:
             self.logger.error(f"Balance is too high: {self.balances[MyToken.A] + self.balances[MyToken.B]:.2f}")
             return
+        self.logger.info(f"balances: A {self.balances[MyToken.A]:.2f} B {self.balances[MyToken.B]:.2f}")  
 
         bid, ask = self.order_book_engine.get_bid_ask(MyToken.A)
         if bid is None or ask is None:
             self.logger.error(f"No bid or ask")
             return
 
-
         delta = self.price - self.target
-        inventory = self.balances[MyToken.A] - self.balances[MyToken.B] 
-
-        # Buy order
-        self.ring_a.check_pair(bid, ask)
-        if self.ring_a.has_ring(inventory, delta, bid, ask):
-            self.ring_a.remove_pair(bid)
-            self.ring_a.add_pair(bid, ask)
-        else:
-            self.ring_a.remove_pair(None)
-
-        # Sell order
-        self.ring_a.place_order(bid)
+        inventory = self.balances[MyToken.A] - self.balances[MyToken.B]
+ 
+        self.ring_a.trade(inventory, delta, bid, ask)
+        self.ring_b.trade(-inventory, -delta, 1-ask, 1-bid)
 
     def run(self):
         while int(time.time()) <= self.end_time:
@@ -58,17 +51,16 @@ class RingStrategy(BaseStrategy):
 
             data = self.price_engine.get_data()
             if data is None:
-                self.logger.error(f"No price data")
+                self.logger.info(f"No price data")
                 continue
 
                 
             self.price = data.get('price')
             self.target = data.get('target')
             if self.price is None or self.target is None:
-                self.logger.error(f"No price or target")
+                self.logger.info(f"No price or target")
                 return
             self.trade()
 
         self.order_book_engine.stop()
-        self.logger.info("Avellaneda market maker finished running")
-
+        self.logger.info("Ring strategy finished running")
