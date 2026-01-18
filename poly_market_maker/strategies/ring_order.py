@@ -81,7 +81,7 @@ class RingOrder:
             if price >= bid and shares > EPS:
                 order_id = self.clob_api.place_order(price, MIN_SIZE, Side.BUY, self.market.token_id(self.token))
                 self.shares[price] = 0
-                self.sell_order_id[price] = order_id
+                # self.sell_order_id[price] = order_id
                 self.logger.info(f"Placed sell order: {price} order_id: {order_id}")
 
     def trade(self, inventory: float, delta: float, bid: float, ask: float):
