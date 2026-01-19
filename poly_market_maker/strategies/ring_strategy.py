@@ -20,7 +20,6 @@ class RingStrategy(BaseStrategy):
     def __init__(self, interval: int):
         super().__init__(interval)
 
-        self.spread = 0.03  # Spread for paired orders
         self.ring_a = RingOrder(token=MyToken.A, market=self.market)
         self.ring_b = RingOrder(token=MyToken.B, market=self.market)
         self.ring_a.set_other(self.ring_b)
@@ -42,7 +41,7 @@ class RingStrategy(BaseStrategy):
             return
 
         delta = self.price - self.target
-        inventory = self.balances[MyToken.A] - self.balances[MyToken.B]
+        inventory = self.balances[MyToken.A] - self.balances[MyToken.B] - delta * 2
  
         self.ring_a.trade(inventory, delta, bid, ask)
         self.ring_b.trade(-inventory, -delta, 1-ask, 1-bid)
