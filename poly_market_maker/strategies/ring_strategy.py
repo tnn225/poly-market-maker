@@ -37,6 +37,9 @@ class RingStrategy(BaseStrategy):
         if bid is None or ask is None:
             self.logger.error(f"No bid or ask")
             return
+        if not (0.01 <= bid <= 0.99 and 0.01 <= ask <= 0.99):
+            self.logger.error(f"Bid or ask is not valid: {bid} {ask}")
+            return
 
         delta = self.price - self.target
         inventory = self.balances[MyToken.A] - self.balances[MyToken.B]

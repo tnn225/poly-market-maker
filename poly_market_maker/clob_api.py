@@ -125,6 +125,16 @@ class ClobApi:
         )
         return price
 
+    def get_order(self, order_id: str):
+        try:
+            order = self.client.get_order(order_id)
+            order['size_matched'] = float(order['size_matched'])
+            order['price'] = round(float(order['price']), 2)
+            return order
+        except Exception as e:
+            self.logger.error(f"Error fetching order {order_id}: {e}")
+            return None
+
     def get_orders(self, condition_id: str):
         """
         Get open keeper orders on the orderbook
@@ -339,6 +349,8 @@ class ClobApi:
             condition_id,
             self.client.get_collateral_address(),
         )
+
+
 
     def get_balances(self, market: Market, user: str = FUNDER):
         params = {

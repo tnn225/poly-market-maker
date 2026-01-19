@@ -19,6 +19,7 @@ class RingOrder:
         #    raise Exception("Depth does not exceed spread.")
         self.token = token
         self.shares = {}
+        self.sell_order_id = {}
         self.spread = 0.03
 
         self.balance = 0
@@ -34,10 +35,9 @@ class RingOrder:
     def check_ring(self):
         self.logger.info(f"check_ring buy_order_id: {self.buy_order_id}")
         if self.buy_order_id is not None:
-            self.buy_order = self.clob_api.client.get_order(self.buy_order_id)
-            self.logger.info(f"check_ring order: {self.buy_order}")
-            size = float(self.buy_order['size_matched'])
-            if abs(size - MIN_SIZE) <= EPS:
+            self.buy_order = self.clob_api.get_order(self.buy_order_id)
+            if self.buy_order is None or abs(self.buy_order['size_matched'] - MIN_SIZE) <= EPS:
+                self.logger.info(f"Order {self.buy_order_id} is filled, removing from buy_order_id")
                 self.buy_order_id = None
                 self.buy_order = None
                 self.other.shares[self.sell_price] = MIN_SIZE
@@ -54,11 +54,10 @@ class RingOrder:
             self.buy_order_id = None
             self.buy_order = None
 
-
     def has_ring(self, inventory: float, delta: float, bid: float, ask: float) -> bool:
         if inventory < 0 or (inventory == 0 and delta > 0):
             sell_price = 1 - ask - self.spread
-            return 0.01 <= sell_price <= 0.99 and self.get_shares(sell_price) <= MIN_SIZE
+            return 0.01 <= sell_price <= 0.99 and self.other.get_shares(sell_price) <= MIN_SIZE
         return False
 
     def add_ring(self, bid: float, ask: float):
@@ -66,22 +65,41 @@ class RingOrder:
             return
 
         # self.shares[bid] = MIN_SIZE
-        order = Order(price=bid, side=Side.BUY, token=self.token, size=MIN_SIZE)
-        self.buy_order_id = self.clob_api.place_order(order.price, order.size, order.side.value, self.market.token_id(self.token))
+        self.buy_order_id = self.clob_api.place_order(bid, MIN_SIZE, Side.BUY.value, self.market.token_id(self.token))
         self.sell_price = round(1 - (bid + self.spread), 2)
 
-    def get_shares(self, price: float) -> bool:
+    def get_shares(self, price: float) -> float:
         if price in self.shares:
             return self.shares[price]
-        return 0
+        return 0.0
 
     def place_sell_order(self, bid: float):
+        for price, order_id in list(self.sell_order_id.items()):
+            sell_order = self.clob_api.get_order(order_id)
+            if sell_order is None:
+                del self.sell_order_id[price]
+                self.logger.info(f"Order {order_id} not found, removing from sell_order_id")
+                continue
+
+            size = float(sell_order['size_matched'])
+            if abs(size - MIN_SIZE) <= EPS: 
+                del self.sell_order_id[price]
+                self.logger.info(f"Order {order_id} is filled, removing from sell_order_id")
+                continue
+
+            if float(sell_order['price']) + EPS < bid:
+                self.clob_api.cancel_order(order_id)
+                del self.sell_order_id[price]
+                self.shares[price] = MIN_SIZE
+                self.logger.info(f"Order {order_id} is below bid, removing from sell_order_id")
+                continue
+
         # Iterate through all shares and place sell orders
         for price, shares in list(self.shares.items()):
             if price >= bid and shares > EPS:
-                order_id = self.clob_api.place_order(price, MIN_SIZE, Side.BUY, self.market.token_id(self.token))
+                order_id = self.clob_api.place_order(price, MIN_SIZE, Side.BUY.value, self.market.token_id(self.token))
                 self.shares[price] = 0
-                # self.sell_order_id[price] = order_id
+                self.sell_order_id[price] = order_id
                 self.logger.info(f"Placed sell order: {price} order_id: {order_id}")
 
     def trade(self, inventory: float, delta: float, bid: float, ask: float):
@@ -94,4 +112,5 @@ class RingOrder:
             self.add_ring(bid, ask)
 
         # Sell order
+        # if inventory < 0:
         self.place_sell_order(bid)

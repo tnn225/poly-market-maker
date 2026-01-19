@@ -10,6 +10,7 @@ DEBUG = False
 ADDRESS = "0xcc553b67cfa321f74c56515727ebe16dcb137cb3"
 # ADDRESS = "0xe041d09715148a9a4a7a881a5580da2c0701f2e5"
 
+# ADDRESS = "0x506bce138df20695c03cd5a59a937499fb00b0fe"
 
 class CopyTradeStrategy(BaseStrategy):
     def __init__(self, interval: int):
