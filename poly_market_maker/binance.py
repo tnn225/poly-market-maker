@@ -4,42 +4,24 @@ import os
 import numpy as np
 from datetime import datetime, timezone, timedelta
 import pandas as pd
+import joblib
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import roc_auc_score, average_precision_score, accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
-import matplotlib.pyplot as plt
 
 
 BASE_URL = "https://api.binance.com/api/v3/klines"
-
 
 class Binance:
     def __init__(self, symbol="BTCUSDT", interval="15m"):
         self.symbol = symbol
         self.interval = interval
-        date = "2025-12-16"
-        start_time = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-        end_time = start_time + timedelta(days=1)
-        # self.df = self.fetch(start_time=datetime.now(timezone.utc) - timedelta(days=365), end_time=datetime.now(timezone.utc))
-        self.df = self.fetch(start_time=start_time, end_time=end_time)
-        self.df = self._add_features(self.df)
+        self.df = self.fetch(start_time=datetime.now(timezone.utc) - timedelta(days=7), end_time=datetime.now(timezone.utc))
+        self.df = self.add_features(self.df)
 
-    def fetch(self, start_time=None, end_time=None, limit=1000, sleep=0.2):
-        """Fetch klines data. Returns DataFrame with ~35K rows for 1 year at 15m intervals."""
-        filename = f"./data/binance_{self.symbol}_{self.interval}.csv"
-        # Load from file if it exists
-        if os.path.exists(filename):
-            print(f"Loading data from {filename}")
-            df = pd.read_csv(filename)
-            # Ensure timestamp columns are int
-            df["open_time"] = df["open_time"].astype(int)
-            df["close_time"] = df["close_time"].astype(int)
-            return df
-        
+    def get_df(self, start_time=None, end_time=None, limit=1000, sleep=0.2):
+        """Fetch klines data in real-time."""
         print(f"Fetching data from {start_time} to {end_time}")
         
-        start_ms = self._to_ms(start_time or datetime.now(timezone.utc) - timedelta(days=365*3))
+        start_ms = self._to_ms(start_time or datetime.now(timezone.utc) - timedelta(days=1))
         end_ms = self._to_ms(end_time or datetime.now(timezone.utc))
         
         all_rows = []
@@ -74,6 +56,22 @@ class Binance:
         
         for col in ["open", "high", "low", "close", "volume", "quote_volume", "taker_buy_base_vol", "taker_buy_quote_vol"]:
             df[col] = df[col].astype(float)
+        return df
+
+    def fetch(self, start_time=None, end_time=None, limit=1000, sleep=0.2):
+        """Fetch klines data. Returns DataFrame with ~35K rows for 1 year at 15m intervals."""
+        filename = f"./data/binance_{self.symbol}_{self.interval}.csv"
+        # Load from file if it exists
+        if os.path.exists(filename):
+            print(f"Loading data from {filename}")
+            df = pd.read_csv(filename)
+            # Ensure timestamp columns are int
+            df["open_time"] = df["open_time"].astype(int)
+            df["close_time"] = df["close_time"].astype(int)
+            return df
+
+        df = self.get_df(start_time=start_time, end_time=end_time, limit=limit, sleep=sleep)
+
         # Ensure data directory exists
         dirname = os.path.dirname(filename)
         if dirname:
@@ -82,7 +80,7 @@ class Binance:
         print(f"Saved data to {filename}")
         return df
 
-    def _add_features(self, df):
+    def add_features(self, df):
         df["taker_sell_base_vol"] = df["volume"] - df["taker_buy_base_vol"]
         df["taker_sell_quote_vol"] = df["quote_volume"] - df["taker_buy_quote_vol"]
 
@@ -171,7 +169,7 @@ class Binance:
             return int(ts.replace(tzinfo=timezone.utc).timestamp() * 1000)
         raise ValueError("Unsupported timestamp type")
 
-    def train_test_split(self, test_ratio: float = 0.2):
+    def train_test_split(self, test_ratio: float = 0.0365):
         df_sorted = self.df.sort_values('open_time').reset_index(drop=True)
         split_idx = int(len(df_sorted) * (1 - test_ratio))
         split_idx = max(1, min(split_idx, len(df_sorted) - 1))
@@ -179,151 +177,119 @@ class Binance:
         self.test_df = df_sorted.iloc[split_idx:].copy()
         return self.train_df, self.test_df
 
+    def get_feature_cols(self):
+        return [
+            # PC1 (20.63% variance): Returns and EMA - most important
+            'ret_1',          # Past return over 1 period
+            'ret_3',          # Past return over 3 periods
+            'ret_5',          # Past return over 5 periods
+            'ret_10',         # Past return over 10 periods
+            'ema_diff_10',    # EMA(10) difference
+            'ema_diff_20',    # EMA(20) difference (original)
+            'ema_diff_50',    # EMA(50) difference
+            'ret_momentum',   # Rate of change of returns
+            'ret_volatility', # Volatility of returns
+            
+            # PC2 (16.63% variance): Volume metrics
+            'vol_z',          # Volume z-score
+            'vol_ratio',      # Volume relative to mean
+            
+            # PC3-PC4 (27.40% combined): Candlestick patterns
+            'body_pct',       # Body size as percentage of range
+            'upper_wick_pct', # Upper wick percentage
+            'lower_wick_pct', # Lower wick percentage
+            'close_pos',      # Close position in range
+            'wick_balance',   # Net wick direction (upper - lower)
+            
+            # PC5-PC8 (25.93% combined): ATR and time features
+            'atr_pct',        # ATR as percentage
+            'hour_sin',       # Hour sine encoding
+            'hour_cos',       # Hour cosine encoding
+            
+            # Feature interactions (combining important features)
+            'body_vol_interaction',  # body_pct * vol_ratio
+            'ret_vol_interaction',   # ret_1 * vol_z
+        ]
 
-def evaluate(test_df, label_column: str = 'label', probability_column: str = 'probability', threshold: float = 0.5):
-    y_true = test_df[label_column].astype(float)
-    y_pred_proba = test_df[probability_column].astype(float)
-    y_pred = (y_pred_proba >= threshold).astype(int)
+    def get_model(self):
+        """Load model from file if exists, otherwise train and save."""
+        model_filename = f"./data/models/binance_{self.symbol}.pkl"
+        self.feature_cols = self.get_feature_cols()
+        
+        if os.path.exists(model_filename):
+            print(f"Loading model from {model_filename}")
+            self.model = joblib.load(model_filename)
+            return self.model
+        
+        print(f"Training new model...")
+        self.model = RandomForestClassifier(n_estimators=300, max_depth=10, random_state=42)
+        self.model.fit(self.train_df[self.feature_cols], self.train_df['label'])
+        
+        # Save model
+        os.makedirs(os.path.dirname(model_filename), exist_ok=True)
+        joblib.dump(self.model, model_filename)
+        print(f"Saved model to {model_filename}")
+        
+        return self.model
     
-    test_df['y_true'] = y_true
-    test_df['y_pred_proba'] = y_pred_proba
-    test_df['y_pred'] = y_pred
+    def save_model(self, filename=None):
+        """Save model to file."""
+        if filename is None:
+            filename = f"./data/models/binance_{self.symbol}.pkl"
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        joblib.dump(self.model, filename)
+        print(f"Saved model to {filename}")
     
-    # Calculate metrics
-    auc = roc_auc_score(y_true, y_pred_proba)
-    pr_auc = average_precision_score(y_true, y_pred_proba)
-    accuracy = accuracy_score(y_true, y_pred)
-    precision = precision_score(y_true, y_pred, zero_division=0)
-    recall = recall_score(y_true, y_pred, zero_division=0)
-    f1 = f1_score(y_true, y_pred, zero_division=0)
-    cm = confusion_matrix(y_true, y_pred)
-    
-    # Print metrics
-    print(f"\n{'='*60}")
-    print(f"Model Performance Metrics")
-    print(f"{'='*60}")
-    print(f"ROC-AUC:      {auc:.4f}")
-    print(f"PR-AUC:       {pr_auc:.4f}")
-    print(f"Accuracy:     {accuracy:.4f}")
-    print(f"Precision:    {precision:.4f}")
-    print(f"Recall:       {recall:.4f}")
-    print(f"F1-Score:     {f1:.4f}")
-    print(f"\nConfusion Matrix (threshold={threshold}):")
-    print(f"  True Neg: {cm[0,0]:6d}  |  False Pos: {cm[0,1]:6d}")
-    print(f"  False Neg: {cm[1,0]:6d}  |  True Pos:  {cm[1,1]:6d}")
-    print(f"\nLabel Distribution:")
-    class_0_count = int((y_true == 0).sum())
-    class_1_count = int((y_true == 1).sum())
-    total = len(y_true)
-    print(f"  Class 0: {class_0_count:6d} ({class_0_count/total*100:.2f}%)")
-    print(f"  Class 1: {class_1_count:6d} ({class_1_count/total*100:.2f}%)")
-    print(f"{'='*60}\n")
-
-    return test_df
-
-
+    def load_model(self, filename=None):
+        """Load model from file."""
+        if filename is None:
+            filename = f"./data/models/binance_{self.symbol}.pkl"
+        self.model = joblib.load(filename)
+        self.feature_cols = self.get_feature_cols()
+        print(f"Loaded model from {filename}")
+        return self.model
 
 def model_binance():
     binance = Binance(symbol="BTCUSDT", interval="15m")
-    
-    train_df, test_df = binance.train_test_split()
-    model = RandomForestClassifier(n_estimators=100, max_depth=10, random_state=42)
-    # Feature selection based on PCA analysis (prioritizing high-variance components)
-    feature_cols = [
-        # PC1 (20.63% variance): Returns and EMA - most important
-        'ret_1',          # Past return over 1 period
-        'ret_3',          # Past return over 3 periods
-        'ret_5',          # Past return over 5 periods
-        'ret_10',         # Past return over 10 periods
-        'ema_diff_10',    # EMA(10) difference
-        'ema_diff_20',    # EMA(20) difference (original)
-        'ema_diff_50',    # EMA(50) difference
-        'ret_momentum',   # Rate of change of returns
-        'ret_volatility', # Volatility of returns
-        
-        # PC2 (16.63% variance): Volume metrics
-        'vol_z',          # Volume z-score
-        'vol_ratio',      # Volume relative to mean
-        
-        # PC3-PC4 (27.40% combined): Candlestick patterns
-        'body_pct',       # Body size as percentage of range
-        'upper_wick_pct', # Upper wick percentage
-        'lower_wick_pct', # Lower wick percentage
-        'close_pos',      # Close position in range
-        'wick_balance',   # Net wick direction (upper - lower)
-        
-        # PC5-PC8 (25.93% combined): ATR and time features
-        'atr_pct',        # ATR as percentage
-        'hour_sin',       # Hour sine encoding
-        'hour_cos',       # Hour cosine encoding
-        
-        # Feature interactions (combining important features)
-        'body_vol_interaction',  # body_pct * vol_ratio
-        'ret_vol_interaction',   # ret_1 * vol_z
-    ]
-    feature_cols = ['delta']
+    train_df, test_df = binance.train_test_split() 
+    model = binance.get_model()
+    feature_cols = binance.feature_cols
 
-    model.fit(train_df[feature_cols], train_df['label'])
     test_df['probability'] = model.predict_proba(test_df[feature_cols])[:, 1]
 
-    evaluate(test_df, probability_column='probability')
-
-def visualize_binance(df):
-    plt.figure(figsize=(10, 6))
-    plt.scatter(df['delta'], df['previous_delta'])
-    plt.xlabel('Delta')
-    plt.ylabel('Previous Delta')
-    plt.title('Delta vs Previous Delta')
-    plt.show(block=True)
-
-def view_bins(df):
-    """Plot previous_delta_bin vs is_up mean"""
-    df = df.sort_values('open_time')
+    print(f"\nAccuracy by probability percentile (5% buckets):")
+    print(f"{'Percentile':<12} {'Prob Range':<20} {'Count':<8} {'Accuracy':<10}")
+    print("-" * 50)
     
-    # Remove rows with NaN previous_delta or is_up
-    df = df.dropna(subset=['previous_delta', 'is_up'])
+    for i in range(0, 100, 5):
+        lower_pct = i / 100.0
+        upper_pct = (i + 5) / 100.0
+        
+        lower_threshold = test_df['probability'].quantile(lower_pct)
+        upper_threshold = test_df['probability'].quantile(upper_pct)
+        
+        bucket = test_df[
+            (test_df['probability'] >= lower_threshold) & 
+            (test_df['probability'] < upper_threshold if upper_pct < 1.0 else test_df['probability'] <= upper_threshold)
+        ]
+        
+        bucket_count = len(bucket)
+        bucket_correct = int(bucket['label'].sum())
+        bucket_accuracy = bucket_correct / bucket_count * 100.0 if bucket_count else 0.0
+        
+        print(f"{i:3d}-{i+5:<3d}%    [{lower_threshold:.4f}, {upper_threshold:.4f})  {bucket_count:<8} {bucket_accuracy:.1f}%")
     
-    # Create buckets for previous_delta using custom bins
-    bins = [-5000, -1000, -500, 0, 500, 1000, 5000]
-    df['previous_delta_bin'] = pd.cut(df['previous_delta'], bins=bins, labels=False, include_lowest=True)
-    
-    # Calculate mean is_up for each bucket
-    bucket_stats = df.groupby('previous_delta_bin').agg({
-        'previous_delta': 'mean',  # Use mean of previous_delta as bucket center
-        'is_up': ['mean', 'count']  # Mean and count of is_up
-    })
-    bucket_stats.columns = ['previous_delta_mean', 'is_up_mean', 'count']
-    bucket_stats = bucket_stats.reset_index()
-    
-    # Remove buckets with too few samples
-    bucket_stats = bucket_stats[bucket_stats['count'] > 0]
-    
-    # Create subplots: one for mean is_up, one for count
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 10), sharex=True)
-    
-    # Top plot: Dot plot of mean is_up
-    ax1.scatter(bucket_stats['previous_delta_mean'], bucket_stats['is_up_mean'], 
-                s=50, alpha=0.7, color='blue')
-    ax1.set_ylabel('Mean is_up')
-    ax1.set_title('Mean is_up by Previous Delta Buckets (Binance)')
-    ax1.grid(True, alpha=0.3)
-    
-    # Bottom plot: Bar chart of count
-    ax2.bar(bucket_stats['previous_delta_mean'], bucket_stats['count'], 
-            width=(bucket_stats['previous_delta_mean'].max() - bucket_stats['previous_delta_mean'].min()) / len(bucket_stats) * 0.8,
-            alpha=0.7, color='green')
-    ax2.set_xlabel('Previous Delta (bucket center)')
-    ax2.set_ylabel('Count')
-    ax2.set_title('Count by Previous Delta Buckets')
-    ax2.grid(True, alpha=0.3)
-    
-    plt.tight_layout()
-    plt.show(block=True)  # Keep chart open until manually closed
-
 def main():
     binance = Binance(symbol="BTCUSDT", interval="15m")
-    df = binance.df
-    view_bins(df)
+    model = binance.get_model()
+    feature_cols = binance.feature_cols
 
+    while True:
+        df = binance.get_df(start_time=datetime.now(timezone.utc) - timedelta(hours=1), end_time=datetime.now(timezone.utc))
+        df = binance.add_features(df)
+        df['probability'] = model.predict_proba(df[feature_cols])[:, 1]
+        print(df[['open_time', 'probability']])
+        time.sleep(10)
 if __name__ == "__main__":
     main()
+

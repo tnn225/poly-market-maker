@@ -326,4 +326,54 @@ def main():
     view_bins(df)
 
 if __name__ == "__main__":
-    main()
+    main()def visualize_binance(df):
+    plt.figure(figsize=(10, 6))
+    plt.scatter(df['delta'], df['previous_delta'])
+    plt.xlabel('Delta')
+    plt.ylabel('Previous Delta')
+    plt.title('Delta vs Previous Delta')
+    plt.show(block=True)
+
+def view_bins(df):
+    """Plot previous_delta_bin vs is_up mean"""
+    df = df.sort_values('open_time')
+    
+    # Remove rows with NaN previous_delta or is_up
+    df = df.dropna(subset=['previous_delta', 'is_up'])
+    
+    # Create buckets for previous_delta using custom bins
+    bins = [-5000, -1000, -500, 0, 500, 1000, 5000]
+    df['previous_delta_bin'] = pd.cut(df['previous_delta'], bins=bins, labels=False, include_lowest=True)
+    
+    # Calculate mean is_up for each bucket
+    bucket_stats = df.groupby('previous_delta_bin').agg({
+        'previous_delta': 'mean',  # Use mean of previous_delta as bucket center
+        'is_up': ['mean', 'count']  # Mean and count of is_up
+    })
+    bucket_stats.columns = ['previous_delta_mean', 'is_up_mean', 'count']
+    bucket_stats = bucket_stats.reset_index()
+    
+    # Remove buckets with too few samples
+    bucket_stats = bucket_stats[bucket_stats['count'] > 0]
+    
+    # Create subplots: one for mean is_up, one for count
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 10), sharex=True)
+    
+    # Top plot: Dot plot of mean is_up
+    ax1.scatter(bucket_stats['previous_delta_mean'], bucket_stats['is_up_mean'], 
+                s=50, alpha=0.7, color='blue')
+    ax1.set_ylabel('Mean is_up')
+    ax1.set_title('Mean is_up by Previous Delta Buckets (Binance)')
+    ax1.grid(True, alpha=0.3)
+    
+    # Bottom plot: Bar chart of count
+    ax2.bar(bucket_stats['previous_delta_mean'], bucket_stats['count'], 
+            width=(bucket_stats['previous_delta_mean'].max() - bucket_stats['previous_delta_mean'].min()) / len(bucket_stats) * 0.8,
+            alpha=0.7, color='green')
+    ax2.set_xlabel('Previous Delta (bucket center)')
+    ax2.set_ylabel('Count')
+    ax2.set_title('Count by Previous Delta Buckets')
+    ax2.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.show(block=True)  # Keep chart open until manually closed

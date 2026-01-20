@@ -30,7 +30,7 @@ def v3_to_orderbook_rounded(
     agg: Dict[str, Dict[float, float]] = {"buy": {}, "sell": {}}
 
     # ----- ASKS: sell token0 as price moves up -----
-    ask_prices = _logspace(p_current, p_high, n_levels_each_side)
+    ask_prices = []
     for i in range(len(ask_prices) - 1):
         p_a = ask_prices[i]
         p_b = ask_prices[i + 1]
