@@ -14,7 +14,7 @@ class Binance:
     def __init__(self, symbol="BTCUSDT", interval="15m"):
         self.symbol = symbol
         self.interval = interval
-        self.df = self.fetch(start_time=datetime.now(timezone.utc) - timedelta(days=7), end_time=datetime.now(timezone.utc))
+        self.df = self.fetch(start_time=datetime.now(timezone.utc) - timedelta(days=365*4), end_time=datetime.now(timezone.utc))
         self.df = self.add_features(self.df)
 
     def get_df(self, start_time=None, end_time=None, limit=1000, sleep=0.2):

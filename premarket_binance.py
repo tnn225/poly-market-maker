@@ -23,8 +23,7 @@ class TradeManager:
 
     def cancel_orders(self, orders: list[Order]):
         for order in orders:
-            if order.size == MIN_SIZE:
-                self.clob_api.cancel_order(order.id)
+            self.clob_api.cancel_order(order.id)
 
     def get_orders(self) -> list[Order]:
         if time.time() - self.last_orders_time < 10:
@@ -76,6 +75,7 @@ def main():
     probability = None
 
     binance = Binance(symbol="BTCUSDT", interval="15m")
+    train_df, test_df = binance.train_test_split()
     model = binance.get_model()
     feature_cols = binance.feature_cols
 
@@ -94,7 +94,7 @@ def main():
             continue
         delta = price - target
         """
-        now = int(time.time())
+        now = int(time.time()) + 3
         seconds_left = 900 - (now % 900)
         if seconds_left % 60 == 0 or probability is None:
             df = binance.get_df(start_time=datetime.now(timezone.utc) - timedelta(hours=1), end_time=datetime.now(timezone.utc))
@@ -107,7 +107,7 @@ def main():
         if now // 900 * 900 > interval:  # 15-min intervals
             interval = now // 900 * 900
             trade_manager = TradeManager(interval)
-            trade_manager.trade(probability)
+            # trade_manager.trade(probability)
             has_orders = True
 
         if trade_manager is not None and seconds_left < 600 and has_orders:
