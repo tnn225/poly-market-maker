@@ -53,7 +53,9 @@ def get_probability(binance: Binance, model, feature_cols: list[str], seconds_le
     df = binance.add_features(df)
     df['probability'] = model.predict_proba(df[feature_cols])[:, 1]
 
-    print(df[['open_time', 'probability']])
+    # df['interval'] = df['open_time'] + 900
+
+    print(df[['open_time', 'probability', 'is_up', 'label']])
     # Return probability at open_time == interval
     row = df[df['open_time'] == interval-900] # preciou 15-min ago
     probability = row['probability'].iloc[0] if not row.empty else 0.5

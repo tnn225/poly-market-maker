@@ -19,6 +19,10 @@ DEFAULT_PRICE = 0.5
 from dotenv import load_dotenv
 load_dotenv()
 
+from poly_market_maker.utils.telegram import Telegram
+
+telegram = Telegram()
+
 HOST = "https://clob.polymarket.com"
 CHAIN_ID = 137
 PRIVATE_KEY = os.getenv("PRIVATE_KEY")
@@ -410,12 +414,18 @@ class ClobApi:
         return response.json()
 
     def print_holders(self, interval: int):
+
         market = self.get_market(interval)
         holders = self.get_holders(market)
         for row in holders:
             # print(f"row: {row}")
             for i in range(min(3, len(row['holders']))):
                 holder = row['holders'][i]
+
+                if float(holder['amount']) > 10000:
+                    print(f"Sending telegram message for {holder['proxyWallet']} {holder['amount']}")
+                    telegram.send_message(f"{holder['proxyWallet']} {holder['amount']}")
+
                 print(f"{holder['proxyWallet']} {holder['amount']}")
             print(f"--------------------------------")
 
