@@ -14,33 +14,9 @@ class TradeManager:
     def __init__(self, interval: int):
         self.clob_api = clob_api
         self.market = clob_api.get_market(interval)
-
+        self.interval = interval
         self.amm_a = SimpleOrder(token=MyToken.A)
         self.amm_b = SimpleOrder(token=MyToken.B)
-
-        self.last_orders_time = 0
-        self.orders = self.get_orders()
-
-    def cancel_orders(self, orders: list[Order]):
-        for order in orders:
-            self.clob_api.cancel_order(order.id)
-
-    def get_orders(self) -> list[Order]:
-        if time.time() - self.last_orders_time < 10:
-            return self.orders
-        
-        self.last_orders_time = time.time()        
-        orders = self.clob_api.get_orders(self.market.condition_id)
-        return [
-            Order(
-                size=order_dict["size"],
-                price=order_dict["price"],
-                side=Side(order_dict["side"]),
-                token=self.market.token(order_dict["token_id"]),
-                id=order_dict["id"],
-            )
-            for order_dict in orders
-        ]
 
     def place_order(self, new_order: Order) -> Order:
         order_id = self.clob_api.place_order(
@@ -57,22 +33,38 @@ class TradeManager:
             token=new_order.token,
         )
 
-    def trade(self, probability: float):
+    def trade(self, seconds_left: int, probability: float):
+        print(f"trade interval: {self.interval} seconds_left: {seconds_left} probability: {probability}")
         if probability > 0.5803:
-            order = self.amm_a.get_buy_order(0.49, MIN_SIZE)
-            print(f"trade delta: {probability} order: {order}")
-            self.place_order(order)
+            self.orders = self.amm_a.get_buy_orders()
+            for order in self.orders:
+                print(f"trade delta: {probability} order: {order}")
+                self.place_order(order)
 
         if probability < 0.4241:
-            order = self.amm_b.get_buy_order(0.49, MIN_SIZE)
-            print(f"trade delta: {probability} order: {order}")
-            self.place_order(order)
+            self.orders = self.amm_b.get_buy_orders()
+            for order in self.orders:
+                print(f"trade delta: {probability} order: {order}")
+                self.place_order(order)
+
+
+def get_probability(binance: Binance, model, feature_cols: list[str], seconds_left: int, interval: int):
+    df = binance.get_df(start_time=datetime.now(timezone.utc) - timedelta(hours=1), end_time=datetime.now(timezone.utc))
+    df = binance.add_features(df)
+    df['probability'] = model.predict_proba(df[feature_cols])[:, 1]
+
+    print(df[['open_time', 'probability']])
+    # Return probability at open_time == interval
+    row = df[df['open_time'] == interval-900] # preciou 15-min ago
+    probability = row['probability'].iloc[0] if not row.empty else 0.5
+    print(f"  get_probability seconds_left: {seconds_left} interval: {interval} probability: {probability}")
+    return probability
 
 def main():
     interval = 0
     trade_manager = None
     has_orders = False
-    probability = None
+    probability = 0.5
 
     binance = Binance(symbol="BTCUSDT", interval="15m")
     train_df, test_df = binance.train_test_split()
@@ -94,26 +86,22 @@ def main():
             continue
         delta = price - target
         """
-        now = int(time.time()) + 3
+        now = int(time.time())
         seconds_left = 900 - (now % 900)
-        if seconds_left % 60 == 0 or probability is None:
-            df = binance.get_df(start_time=datetime.now(timezone.utc) - timedelta(hours=1), end_time=datetime.now(timezone.utc))
-            df = binance.add_features(df)
-            df['probability'] = model.predict_proba(df[feature_cols])[:, 1]
-            probability = df['probability'].iloc[-1]
-            print(df[['open_time', 'probability']])
-            print(f"seconds_left: {seconds_left} probability: {probability}")
+        if seconds_left % 60 == 0:
+            probability = get_probability(binance, model, feature_cols, seconds_left, now // 900 * 900)
+            clob_api.print_holders(now // 900 * 900)
 
-        if now // 900 * 900 > interval:  # 15-min intervals
+        if now // 900 * 900 > interval and seconds_left > 840:  # 15-min intervals
             interval = now // 900 * 900
+            probability = get_probability(binance, model, feature_cols, seconds_left, interval) 
+
             trade_manager = TradeManager(interval)
-            # trade_manager.trade(probability)
+            trade_manager.trade(seconds_left, probability)
             has_orders = True
 
         if trade_manager is not None and seconds_left < 600 and has_orders:
-            trade_manager.last_orders_time = 0
-            trade_manager.orders = trade_manager.get_orders()
-            trade_manager.cancel_orders(trade_manager.orders)
+            trade_manager.clob_api.cancel_all_orders()
             has_orders = False
 
 if __name__ == "__main__":

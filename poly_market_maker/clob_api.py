@@ -50,6 +50,11 @@ class ClobApi:
             return
         self.logger = logging.getLogger(self.__class__.__name__)
         self.fee_rate_bps = FEE_RATE_BPS
+
+        self.last_orders_time = 0
+        self.orders = []
+        self.markets = {}
+
         
         # Turn off DEBUG logging for ClobClient and underlying HTTP clients
         # Configure before ClobClient instantiation to catch all initialization logs
@@ -141,21 +146,20 @@ class ClobApi:
         """
         self.logger.debug("Fetching open keeper orders from the API...")
         start_time = time.time()
+        if time.time() - self.last_orders_time < 10:
+            return self.orders
+        self.last_orders_time = time.time()
         try:
             resp = self.client.get_orders(OpenOrderParams(market=condition_id))
             clob_requests_latency.labels(method="get_orders", status="ok").observe(
                 (time.time() - start_time)
             )
-
-            return [self._get_order(order) for order in resp]
+            self.orders = [self._get_order(order) for order in resp]
         except Exception as e:
-            self.logger.error(
-                f"Error fetching keeper open orders from the CLOB API: {e}"
-            )
-            clob_requests_latency.labels(method="get_orders", status="error").observe(
-                (time.time() - start_time)
-            )
-        return []
+            self.logger.error(f"Error fetching keeper open orders from the CLOB API: {e}")
+            clob_requests_latency.labels(method="get_orders", status="error").observe((time.time() - start_time))
+            self.orders = []
+        return self.orders
 
     def place_order(self, price: float, size: float, side: str, token_id: int) -> str:
         """
@@ -341,16 +345,17 @@ class ClobApi:
         return resp.json().get("conditionId")
 
     def get_market(self, timestamp: int):
+        if timestamp in self.markets:
+            return self.markets[timestamp]
         slug = f"btc-updown-15m-{timestamp}"
         print( f"Fetching market for slug: {slug}")
         condition_id = self.get_condition_id_by_slug(slug)
 
-        return Market(
+        self.markets[timestamp] = Market(
             condition_id,
             self.client.get_collateral_address(),
         )
-
-
+        return self.markets[timestamp]
 
     def get_balances(self, market: Market, user: str = FUNDER):
         params = {
@@ -397,6 +402,22 @@ class ClobApi:
                 'end_date': pos.get('endDate'),
             }
         return parsed
+
+    def get_holders(self, market: Market):
+        url = f"https://data-api.polymarket.com/holders?market={market.condition_id}"
+        response = requests.get(url)
+        response.raise_for_status()
+        return response.json()
+
+    def print_holders(self, interval: int):
+        market = self.get_market(interval)
+        holders = self.get_holders(market)
+        for row in holders:
+            # print(f"row: {row}")
+            for i in range(min(3, len(row['holders']))):
+                holder = row['holders'][i]
+                print(f"{holder['proxyWallet']} {holder['amount']}")
+            print(f"--------------------------------")
 
 def main():
     clob_api = ClobApi()

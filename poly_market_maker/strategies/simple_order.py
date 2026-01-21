@@ -5,6 +5,7 @@ from poly_market_maker.order import Order, Side
 
 
 SIZE = 5
+CAPITAL = 5
 MAX_BALANCE = 10
 MAX_IMBALANCE = 20
 MAX_HEDGE_IMBALANCE = 50
@@ -26,6 +27,7 @@ class SimpleOrder:
         self.max_collateral = 100
         self.balance = 0
         self.imbalance = 0
+        self.buy_prices = [0.49, 0.30, 0.15, 0.1, 0.05]
 
     def set_balance(self, balance: float):
         self.balance = balance
@@ -69,8 +71,8 @@ class SimpleOrder:
                 price=price,
                 side=Side.BUY,
                 token=self.token,
-                # size=math_round_down(CAPITAL / bid, 2),  
-                size = SIZE
+                size=round(CAPITAL / price, 2),  
+                # size = SIZE
             )
             for price in self.buy_prices
         ]
