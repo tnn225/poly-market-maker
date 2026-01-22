@@ -35,13 +35,13 @@ class TradeManager:
 
     def trade(self, seconds_left: int, probability: float):
         print(f"trade interval: {self.interval} seconds_left: {seconds_left} probability: {probability}")
-        if probability > 0.5803:
+        if probability > 0.5699:
             self.orders = self.amm_a.get_buy_orders()
             for order in self.orders:
                 print(f"trade delta: {probability} order: {order}")
                 self.place_order(order)
 
-        if probability < 0.4241:
+        if probability < 0.4381:
             self.orders = self.amm_b.get_buy_orders()
             for order in self.orders:
                 print(f"trade delta: {probability} order: {order}")
@@ -59,7 +59,7 @@ def get_probability(binance: Binance, model, feature_cols: list[str], seconds_le
     # Return probability at open_time == interval
     row = df[df['open_time'] == interval-900] # preciou 15-min ago
     probability = row['probability'].iloc[0] if not row.empty else 0.5
-    print(f"  get_probability seconds_left: {seconds_left} interval: {interval} probability: {probability}")
+    print(f"{seconds_left} interval: {interval} probability: {probability}")
     return probability
 
 def main():
@@ -92,9 +92,10 @@ def main():
         seconds_left = 900 - (now % 900)
         if seconds_left % 60 == 0:
             probability = get_probability(binance, model, feature_cols, seconds_left, now // 900 * 900)
-            clob_api.print_holders(now // 900 * 900)
+            # clob_api.print_holders(now // 900 * 900)
 
         if now // 900 * 900 > interval and seconds_left > 840:  # 15-min intervals
+
             interval = now // 900 * 900
             probability = get_probability(binance, model, feature_cols, seconds_left, interval) 
 

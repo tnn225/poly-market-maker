@@ -281,6 +281,7 @@ def model_binance():
     
 def main():
     binance = Binance(symbol="BTCUSDT", interval="15m")
+    train_df, test_df = binance.train_test_split()
     model = binance.get_model()
     feature_cols = binance.feature_cols
 
@@ -290,6 +291,7 @@ def main():
         df['probability'] = model.predict_proba(df[feature_cols])[:, 1]
         print(df[['open_time', 'probability']])
         time.sleep(10)
-if __name__ == "__main__":
-    main()
 
+if __name__ == "__main__":
+    # main()
+    model_binance()

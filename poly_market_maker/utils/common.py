@@ -2,8 +2,13 @@ import logging
 import math
 import os
 import random
+import warnings
 import yaml
 from logging import config
+
+# Suppress pkg_resources deprecation warning from web3
+warnings.filterwarnings("ignore", category=UserWarning, message=".*pkg_resources is deprecated.*")
+
 from web3 import Web3
 from web3.middleware import (
     geth_poa_middleware,

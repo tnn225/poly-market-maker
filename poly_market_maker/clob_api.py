@@ -414,6 +414,7 @@ class ClobApi:
         return response.json()
 
     def print_holders(self, interval: int):
+        print(f"Printing holders for interval: {interval}")
 
         market = self.get_market(interval)
         holders = self.get_holders(market)
