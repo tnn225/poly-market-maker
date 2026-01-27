@@ -73,6 +73,12 @@ def fetch_all_orders(user: str, market_slug: str, auth_token: str, max_retries: 
         order["timestamp"] = int(order["timestamp"]) - TIMESTAMP
         order["shares_normalized"] = round(order["shares_normalized"], 2)
         order["price"] = round(order["price"], 2)
+        
+        # Transform: if buying Down, convert to selling Up
+        if order.get('token_label') == 'Down' and order.get('side') == 'BUY':
+            order['token_label'] = 'Up'
+            order['side'] = 'SELL'
+            order['price'] = round(1 - order['price'], 2)
 
     all_orders.sort(key=lambda x: x["timestamp"])
 

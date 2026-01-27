@@ -348,18 +348,14 @@ class ClobApi:
                 
         return resp.json().get("conditionId")
 
-    def get_market(self, timestamp: int):
-        if timestamp in self.markets:
-            return self.markets[timestamp]
-        slug = f"btc-updown-15m-{timestamp}"
+    def get_market(self, timestamp: int, symbol: str='btc'):
+        slug = f"{symbol}-updown-15m-{timestamp}"
+        if slug in self.markets:
+            return self.markets[slug]
         print( f"Fetching market for slug: {slug}")
         condition_id = self.get_condition_id_by_slug(slug)
-
-        self.markets[timestamp] = Market(
-            condition_id,
-            self.client.get_collateral_address(),
-        )
-        return self.markets[timestamp]
+        self.markets[slug] = Market(condition_id, self.client.get_collateral_address())
+        return self.markets[slug]
 
     def get_balances(self, market: Market, user: str = FUNDER):
         params = {
@@ -413,22 +409,6 @@ class ClobApi:
         response.raise_for_status()
         return response.json()
 
-    def print_holders(self, interval: int):
-        print(f"Printing holders for interval: {interval}")
-
-        market = self.get_market(interval)
-        holders = self.get_holders(market)
-        for row in holders:
-            # print(f"row: {row}")
-            for i in range(min(3, len(row['holders']))):
-                holder = row['holders'][i]
-
-                if float(holder['amount']) > 10000:
-                    print(f"Sending telegram message for {holder['proxyWallet']} {holder['amount']}")
-                    telegram.send_message(f"{holder['proxyWallet']} {holder['amount']}")
-
-                print(f"{holder['proxyWallet']} {holder['amount']}")
-            print(f"--------------------------------")
 
 def main():
     clob_api = ClobApi()

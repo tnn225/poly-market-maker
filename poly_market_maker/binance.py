@@ -14,8 +14,11 @@ class Binance:
     def __init__(self, symbol="BTCUSDT", interval="15m"):
         self.symbol = symbol
         self.interval = interval
+
+    def load_df(self):
         self.df = self.fetch(start_time=datetime.now(timezone.utc) - timedelta(days=365*4), end_time=datetime.now(timezone.utc))
         self.df = self.add_features(self.df)
+        train_df, test_df = self.train_test_split()
 
     def get_df(self, start_time=None, end_time=None, limit=1000, sleep=0.2):
         """Fetch klines data in real-time."""
@@ -211,25 +214,15 @@ class Binance:
             'ret_vol_interaction',   # ret_1 * vol_z
         ]
 
-    def get_model(self):
+    def train_model(self):
         """Load model from file if exists, otherwise train and save."""
+        self.load_df()
+        self.train_df, self.test_df = self.train_test_split()
+        self.feature_cols = self.get_feature_cols() 
         model_filename = f"./data/models/binance_{self.symbol}.pkl"
-        self.feature_cols = self.get_feature_cols()
-        
-        if os.path.exists(model_filename):
-            print(f"Loading model from {model_filename}")
-            self.model = joblib.load(model_filename)
-            return self.model
-        
-        print(f"Training new model...")
         self.model = RandomForestClassifier(n_estimators=300, max_depth=10, random_state=42)
         self.model.fit(self.train_df[self.feature_cols], self.train_df['label'])
-        
-        # Save model
-        os.makedirs(os.path.dirname(model_filename), exist_ok=True)
-        joblib.dump(self.model, model_filename)
-        print(f"Saved model to {model_filename}")
-        
+        self.save_model(model_filename)
         return self.model
     
     def save_model(self, filename=None):
@@ -249,8 +242,46 @@ class Binance:
         print(f"Loaded model from {filename}")
         return self.model
 
-def model_binance():
+def show():
     binance = Binance(symbol="BTCUSDT", interval="15m")
+    model = binance.load_model()
+    df = binance.get_df(start_time=datetime.now(timezone.utc) - timedelta(hours=24 * 14), end_time=datetime.now(timezone.utc))
+    df = binance.add_features(df)
+    feature_cols = binance.feature_cols
+    df['probability'] = model.predict_proba(df[feature_cols])[:, 1]
+    df['probability'] = df['probability'].shift(1)
+
+    UP_THRESHOLD = 0.57
+    DOWN_THRESHOLD = 0.43
+
+    # Filter: prob > 0.5699 OR prob < 0.4381, ignore NA rows
+    filtered = df[
+        ((df['probability'] > UP_THRESHOLD) | (df['probability'] < DOWN_THRESHOLD))
+    ].dropna(subset=['probability', 'is_up'])
+    
+    total_predictions = len(filtered)
+    
+    # Count correct predictions:
+    # - If prob > {UP_THRESHOLD}, predict "up", correct if is_up == 1
+    # - If prob < {DOWN_THRESHOLD}, predict "down", correct if is_up == 0
+    correct_predictions = (
+        ((filtered['probability'] > UP_THRESHOLD) & (filtered['is_up'] == 1)) |
+        ((filtered['probability'] < DOWN_THRESHOLD) & (filtered['is_up'] == 0))
+    ).sum()
+    correct_ratio = correct_predictions / total_predictions * 100.0 if total_predictions else 0.0
+    
+    print(f"Predictions (prob > {UP_THRESHOLD} OR prob < {DOWN_THRESHOLD}): {total_predictions}")
+    print(f"Correct predictions: {correct_predictions}/{total_predictions} ({correct_ratio:.1f}%)")
+    print(f"\nFiltered data:")
+    print(filtered[['open_time', 'probability', 'is_up']].to_string(index=False))
+
+def show_accuracy():
+    binance = Binance(symbol="BTCUSDT", interval="15m")
+    model = binance.load_model()
+    feature_cols = binance.feature_cols
+    test_df = binance.test_df
+    test_df['probability'] = model.predict_proba(test_df[feature_cols])[:, 1]
+
     train_df, test_df = binance.train_test_split() 
     model = binance.get_model()
     feature_cols = binance.feature_cols
@@ -278,9 +309,10 @@ def model_binance():
         bucket_accuracy = bucket_correct / bucket_count * 100.0 if bucket_count else 0.0
         
         print(f"{i:3d}-{i+5:<3d}%    [{lower_threshold:.4f}, {upper_threshold:.4f})  {bucket_count:<8} {bucket_accuracy:.1f}%")
-    
+
 def main():
     binance = Binance(symbol="BTCUSDT", interval="15m")
+
     train_df, test_df = binance.train_test_split()
     model = binance.get_model()
     feature_cols = binance.feature_cols
@@ -293,5 +325,4 @@ def main():
         time.sleep(10)
 
 if __name__ == "__main__":
-    # main()
-    model_binance()
+    show()
