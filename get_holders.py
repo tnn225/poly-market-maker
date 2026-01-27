@@ -10,29 +10,71 @@ setup_logging()
 clob_api = ClobApi()
 telegram = Telegram()
 
-SIDES = {
-    MyToken.A: 'Up',
-    MyToken.B: 'Down'
-}
-SYMBOLS = ['btc', 'eth', 'sol', 'xrp']
+SIDES = {MyToken.A: "Up", MyToken.B: "Down"}
+SYMBOLS = ["btc", "eth", "sol", "xrp"]
 MIN_HOLDER_SIZE = 10000
 
-once = {} 
+once = {}
+
+WALLETS = {
+    "0xdAc0aBb17F6a20e728dBC03F97dFd83477df16D3",
+    "0x0d3415B7a89D27c6901EA5C4C110a4Cc532B5982",
+    "0xEdd0ACC3AF8E3DD6c71f75775E38c41DE7b37dD7",
+    "0x705DADa8fEC673Dc94a1019b66ecDE61619e2Ad7",
+    "0x7fc76fea45BDFC6DDFb3D41289e2cbFCa1bdC9C3",
+    "0x858C508A7686Ab28dc46A0119F629F110E53a5A0",
+    "0x2736eF72486363b7F7Fba5A03389e5F349D91c93",
+    "0x44392Df7d8813E0E520e36FDd6104c9A02534189",
+    "0x5323Fbde4F9ef07B0fae670127Bf5aacAa91BC58",
+    "0xB0E3e8bcF12F43B960d36D321C576f24C742809B",
+    "0x388F00CD5c91758f8193eBca8a79dd998DE66C91",
+    "0x517CB690144aC4375dcEa7833899687d35386bc1",
+    "0x6c3490E87b1654310771F6aC52049e38663a2628",
+    "0x398b9775b8F8bc429C7f512121110C1Aeb38f67f",
+    "0x5d7919b3F3422082AfFF540F324E01c1206199F9",
+    "0xf9b39b938e53C41E0bF231E6d74d5Ed738F6e21f",
+    "0x797d8969BE4AAd4E50a286a43A3EbC1adf9eF9F4",
+    "0x3675b7eAE0D21DD5F26545CFa95c5F6C165B75cD",
+    "0x0f10F86A99BD2A57a7C65D031106df5262C696f2",
+    "0x0DCf9aB9AfeEe81b84E1f1B36a52abD636a0b66e",
+    "0xa015983a2FBB460841Ad0Bfa9f781e02EBDcf4dC",
+    "0x58406d71aa5159390c937A2956e93348132B0aF7",
+    "0x0F48b06B511269F9652EFe638107Ae4C7f701A6C",
+    "0xfc6266A0a90AcD205593B566621376aaE5Dd6486",
+    "0x6410154969a89feFACF7f01C62C258E8B68016f6",
+    "0x31146f72D556162225267a6B9B1DF2cd087E049f",
+    "0xAc845434d07F79E09269b489d7AF047D1000A62C",
+    "0xDB5784453FfA8A03A1024C031F0C60eC96fdb0e0",
+    "0xD9E5C9d17F6B6bB0b34738174B48d6f8a758F125",
+    "0xB6348BCEC72981b8c31264F4960549c53b6D1E83",
+}
+
 
 def is_ok(holders: list) -> bool:
     for holder in holders:
-        if float(holder['amount']) > MIN_HOLDER_SIZE:
+        if holder["proxyWallet"] in WALLETS:
             return True
     return False
 
+
 def is_good(holder: dict) -> bool:
-    return float(holder['amount']) > MIN_HOLDER_SIZE
+    return holder["proxyWallet"] in WALLETS
+
+
+def only_once(slug: str, side: str, holders: list) -> bool:
+    key = f"{slug}-{side}"
+    if once.get(key):
+        return False
+    once[key] = True
+    return True
+
 
 def get_size(holders: list) -> float:
     size = 0
     for holder in holders:
-        size += float(holder['amount'])
+        size += float(holder["amount"])
     return size
+
 
 def print_holders(interval: int, symbol: str):
     print(f"Printing holders for interval: {interval}")
@@ -43,31 +85,38 @@ def print_holders(interval: int, symbol: str):
         token_id = market.token_id(my_token)
         for row in rows:
             # print(f"row: {row}")
-            if int(row['token']) != token_id:
+            if int(row["token"]) != token_id:
                 continue
-            holders = row['holders']
+            holders = row["holders"]
             if not is_ok(holders):
                 continue
             slug = f"{symbol}-updown-15m-{interval}"
 
+            num_wallets = 0
+            num_shares = 0
             message = ""
             for holder in holders:
-                # print(f"holder: {holder}")
                 if not is_good(holder):
                     continue
-                key = f"{slug}-{side}-{holder['proxyWallet']}"
-                if once.get(key):
+                num_wallets += 1
+                num_shares += float(holder["amount"])
+
+            message = f"""{num_wallets} wallets {num_shares:.2f} shares {side}\n<a href="https://polymarket.com/event/{slug}">{slug}</a>\n\n"""
+            for holder in holders:
+                if not is_good(holder):
                     continue
-                once[key] = True
-                text = f"""<a href="https://polymarket.com/profile/{holder['proxyWallet']}">{holder['name']}</a> {holder['amount']:.2f} {side} {slug}\n"""
+                text = f"""<a href="https://polymarket.com/profile/{holder['proxyWallet']}">{holder['name']}</a> {holder['amount']:.2f} shares {side}\n"""
                 message += text
-            if len(message) > 0:
+
+            if only_once(slug, side, holders):
                 telegram.send_message(message, disable_web_page_preview=True)
+
 
 def run():
     interval = int(time.time() // 900 * 900)
     for symbol in SYMBOLS:
         print_holders(interval, symbol)
+
 
 def main():
     run()
@@ -80,7 +129,8 @@ def main():
             except Exception as e:
                 print(f"Error: {e}")
                 time.sleep(30)
-        
+
+
 if __name__ == "__main__":
     main()
 
