@@ -11,63 +11,62 @@ clob_api = ClobApi()
 telegram = Telegram()
 
 SIDES = {MyToken.A: "Up", MyToken.B: "Down"}
-SYMBOLS = ["btc", "eth", "sol", "xrp"]
+SYMBOLS = ["btc"] # , "eth", "sol", "xrp"]
 MIN_HOLDER_SIZE = 10000
 
 once = {}
 
-WALLETS = {
-    "0xdAc0aBb17F6a20e728dBC03F97dFd83477df16D3",
-    "0x0d3415B7a89D27c6901EA5C4C110a4Cc532B5982",
-    "0xEdd0ACC3AF8E3DD6c71f75775E38c41DE7b37dD7",
-    "0x705DADa8fEC673Dc94a1019b66ecDE61619e2Ad7",
-    "0x7fc76fea45BDFC6DDFb3D41289e2cbFCa1bdC9C3",
-    "0x858C508A7686Ab28dc46A0119F629F110E53a5A0",
-    "0x2736eF72486363b7F7Fba5A03389e5F349D91c93",
-    "0x44392Df7d8813E0E520e36FDd6104c9A02534189",
-    "0x5323Fbde4F9ef07B0fae670127Bf5aacAa91BC58",
-    "0xB0E3e8bcF12F43B960d36D321C576f24C742809B",
-    "0x388F00CD5c91758f8193eBca8a79dd998DE66C91",
-    "0x517CB690144aC4375dcEa7833899687d35386bc1",
-    "0x6c3490E87b1654310771F6aC52049e38663a2628",
-    "0x398b9775b8F8bc429C7f512121110C1Aeb38f67f",
-    "0x5d7919b3F3422082AfFF540F324E01c1206199F9",
-    "0xf9b39b938e53C41E0bF231E6d74d5Ed738F6e21f",
-    "0x797d8969BE4AAd4E50a286a43A3EbC1adf9eF9F4",
-    "0x3675b7eAE0D21DD5F26545CFa95c5F6C165B75cD",
-    "0x0f10F86A99BD2A57a7C65D031106df5262C696f2",
-    "0x0DCf9aB9AfeEe81b84E1f1B36a52abD636a0b66e",
-    "0xa015983a2FBB460841Ad0Bfa9f781e02EBDcf4dC",
-    "0x58406d71aa5159390c937A2956e93348132B0aF7",
-    "0x0F48b06B511269F9652EFe638107Ae4C7f701A6C",
-    "0xfc6266A0a90AcD205593B566621376aaE5Dd6486",
-    "0x6410154969a89feFACF7f01C62C258E8B68016f6",
-    "0x31146f72D556162225267a6B9B1DF2cd087E049f",
-    "0xAc845434d07F79E09269b489d7AF047D1000A62C",
-    "0xDB5784453FfA8A03A1024C031F0C60eC96fdb0e0",
-    "0xD9E5C9d17F6B6bB0b34738174B48d6f8a758F125",
-    "0xB6348BCEC72981b8c31264F4960549c53b6D1E83",
-}
-
-
-def is_ok(holders: list) -> bool:
-    for holder in holders:
-        if holder["proxyWallet"] in WALLETS:
-            return True
-    return False
-
+wallets = [
+    "0xdac0abb17f6a20e728dbc03f97dfd83477df16d3",
+    "0x0d3415b7a89d27c6901ea5c4c110a4cc532b5982",
+    "0xedd0acc3af8e3dd6c71f75775e38c41de7b37dd7",
+    "0x705dada8fec673dc94a1019b66ecde61619e2ad7",
+    "0x7fc76fea45bdfc6ddfb3d41289e2cbca1bdc9c3",
+    "0x858c508a7686ab28dc46a0119f629f110e53a5a0",
+    "0x2736ef72486363b7f7fba5a03389e5f349d91c93", # active teacher
+    "0x44392df7d8813e0e520e36fdd6104c9a02534189",
+    "0x5323fbde4f9ef07b0fae670127bf5aacaa91bc58",
+    "0xb0e3e8bcf12f43b960d36d321c576f24c742809b",
+    "0x388f00cd5c91758f8193ebca8a79dd998de66c91",
+    "0x517cb690144ac4375dcea7833899687d35386bc1",
+    "0x6c3490e87b1654310771f6ac52049e38663a2628",
+    "0x398b9775b8f8bc429c7f512121110c1aeb38f67f",
+    "0x5d7919b3f3422082afff540f324e01c1206199f9",
+    "0xf9b39b938e53c41e0bf231e6d74d5ed738f6e21f",
+    "0x797d8969be4aad4e50a286a43a3ebc1adf9ef9f4",
+    "0x3675b7eae0d21dd5f26545cfa95c5f6c165b75cd",
+    "0x0f10f86a99bd2a57a7c65d031106df5262c696f2",
+    "0x0dcf9ab9afee81b84e1f1b36a52abd636a0b66e",
+    "0xa015983a2fbb460841ad0bfa9f781e02ebdcf4dc",
+    "0x58406d71aa5159390c937a2956e93348132b0af7",
+    "0x0f48b06b511269f9652efe638107ae4c7f701a6c",
+    "0xfc6266a0a90acd205593b566621376aae5dd6486",
+    "0x6410154969a89fefacf7f01c62c258e8b68016f6",
+    "0x31146f72d556162225267a6b9b1df2cd087e049f",
+    "0xac845434d07f79e09269b489d7af047d1000a62c",
+    "0xdb5784453ffa8a03a1024c031f0c60ec96fdb0e0",
+    "0xd9e5c9d17f6b6bb0b34738174b48d6f8a758f125",
+    "0xb6348bcec72981b8c31264f4960549c53b6d1e83",
+    "0x5b16eb52abb9ff43f758897c96cf901cfbf6ddbc",
+    # "0xd84c2b6d65dc596f49c7b6aadd6d74ca91e407b9", # not teacher
+    # "0xf9a70fa6c2709b023c22e39208ca0252339f416d", # maybe teacher
+    # "0x8c90bff94b638a64c0377cd66f4c5bcba4e46e09", # not teacher
+]
+     
 
 def is_good(holder: dict) -> bool:
-    return holder["proxyWallet"] in WALLETS
-
+    return holder["proxyWallet"].lower() in wallets
 
 def only_once(slug: str, side: str, holders: list) -> bool:
-    key = f"{slug}-{side}"
-    if once.get(key):
-        return False
-    once[key] = True
-    return True
-
+    ret = False
+    for holder in holders:
+        if is_good(holder):
+            print(f"holder: {holder['proxyWallet']}")
+        key = f"{slug}-{side}-{holder['proxyWallet']}"
+        if is_good(holder) and not once.get(key):
+            ret = True
+        once[key] = True
+    return ret
 
 def get_size(holders: list) -> float:
     size = 0
@@ -77,7 +76,8 @@ def get_size(holders: list) -> float:
 
 
 def print_holders(interval: int, symbol: str):
-    print(f"Printing holders for interval: {interval}")
+    now = int(time.time())
+    seconds_left = 900 - (now % 900)
 
     market = clob_api.get_market(interval, symbol)
     rows = clob_api.get_holders(market)
@@ -88,9 +88,13 @@ def print_holders(interval: int, symbol: str):
             if int(row["token"]) != token_id:
                 continue
             holders = row["holders"]
-            if not is_ok(holders):
-                continue
             slug = f"{symbol}-updown-15m-{interval}"
+
+
+            print(f"Printing holders for interval: {interval} {symbol} {side} {get_size(holders):.2f}")
+
+            if not only_once(slug, side, holders):
+                continue
 
             num_wallets = 0
             num_shares = 0
@@ -101,22 +105,19 @@ def print_holders(interval: int, symbol: str):
                 num_wallets += 1
                 num_shares += float(holder["amount"])
 
-            message = f"""{num_wallets} wallets {num_shares:.2f} shares {side}\n<a href="https://polymarket.com/event/{slug}">{slug}</a>\n\n"""
+            message = f"""{num_wallets} / {len(wallets)} wallets\n {num_shares:.2f} / {get_size(holders):.2f} shares {side}\n<a href="https://polymarket.com/event/{slug}">{slug}</a>\n\n"""
             for holder in holders:
                 if not is_good(holder):
                     continue
                 text = f"""<a href="https://polymarket.com/profile/{holder['proxyWallet']}">{holder['name']}</a> {holder['amount']:.2f} shares {side}\n"""
                 message += text
 
-            if only_once(slug, side, holders):
-                telegram.send_message(message, disable_web_page_preview=True)
-
+            telegram.send_message(message, disable_web_page_preview=True)
 
 def run():
     interval = int(time.time() // 900 * 900)
     for symbol in SYMBOLS:
         print_holders(interval, symbol)
-
 
 def main():
     run()
