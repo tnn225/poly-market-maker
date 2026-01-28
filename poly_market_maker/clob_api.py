@@ -2,6 +2,8 @@ import logging
 import os
 import time
 import requests
+import csv
+from datetime import datetime, timezone
 
 from poly_market_maker.my_token import MyToken
 from poly_market_maker.market import Market
@@ -10,9 +12,10 @@ from poly_market_maker.utils.common import randomize_default_price
 from py_clob_client.client import ClobClient, ApiCreds, OrderArgs, OpenOrderParams
 from py_clob_client.clob_types import OrderType as CLOBOrderType
 from py_clob_client.exceptions import PolyApiException
-
+from poly_market_maker.utils.cache import KeyValueStore
 from poly_market_maker.constants import OK, DEBUG
 from poly_market_maker.metrics import clob_requests_latency
+
 
 DEFAULT_PRICE = 0.5
 
@@ -27,6 +30,9 @@ HOST = "https://clob.polymarket.com"
 CHAIN_ID = 137
 PRIVATE_KEY = os.getenv("PRIVATE_KEY")
 FUNDER = os.getenv("FUNDER")
+
+
+SIDES = {MyToken.A: "Up", MyToken.B: "Down"}
 
 # Maker fee rate in basis points. Must match the market's configured maker fee.
 # Defaulting to 1000 bps based on observed API error; override via env if needed.
@@ -58,6 +64,7 @@ class ClobApi:
         self.last_orders_time = 0
         self.orders = []
         self.markets = {}
+        self.cache = KeyValueStore(db_path="./data/trades.db")
 
         
         # Turn off DEBUG logging for ClobClient and underlying HTTP clients
@@ -403,19 +410,72 @@ class ClobApi:
             }
         return parsed
 
-    def get_holders(self, market: Market):
+    def save_holders(self, holders_by_side: dict, symbol: str):
+        now = int(time.time())
+        interval = int(now // 900 * 900)
+        date = datetime.fromtimestamp(now, tz=timezone.utc).strftime("%Y-%m-%d")
+        os.makedirs('./data/holders', exist_ok=True)
+        filename = f'./data/holders/holders_{symbol}_{date}.csv'
+        file_exists = os.path.exists(filename) and os.path.getsize(filename) > 0
+        with open(filename, 'a') as f:
+            writer = csv.writer(f)
+            # Only write header if file is new or empty
+            if not file_exists:
+                writer.writerow(['timestamp', 'interval', 'side', 'name', 'amount', 'traded_count', 'proxyWallet'])
+            for side in holders_by_side:
+                for holder in holders_by_side[side]:
+                    writer.writerow([now, interval, side, holder['name'], holder['amount'], holder['traded_count'], holder['proxyWallet']])
+
+    def get_holders(self, market: Market, symbol: str = 'btc'):
         url = f"https://data-api.polymarket.com/holders?market={market.condition_id}"
         response = requests.get(url)
         response.raise_for_status()
-        return response.json()
+        rows = response.json()
+        holders_by_side = {}
+        for my_token, side in SIDES.items():
+            token_id = market.token_id(my_token)
+            for row in rows:
+                if int(row["token"]) != token_id:
+                    continue
+                holders = row["holders"]
+                for holder in holders:
+                    holder['amount'] = float(holder['amount'])
+                    holder['proxyWallet'] = holder['proxyWallet'].lower()
+                    holder['traded_count'] = self.get_traded_count(holder['proxyWallet'])
+                holders_by_side[side] = holders
+        self.save_holders(holders_by_side, symbol)
+        return holders_by_side
 
+    def get_traded_count(self, address: str) -> int:
+        """
+        Get the total number of trades for a user.
+        Returns the 'traded' count from the API response.
+        """
+        key = f"traded_count_{address}"
+        if self.cache.exists(key):
+            return self.cache.get(key)
+        url = f"https://data-api.polymarket.com/traded?user={address}"
+        response = requests.get(url)
+        time.sleep(0.1)
+        response.raise_for_status()
+        data = response.json().get('traded', 0)
+        self.cache.set(key, data)
+        return data
 
 def main():
     clob_api = ClobApi()
-    market = clob_api.get_market(1768463100)
-    user = "0xe01ae9d586b428c251043368f808e678d4c4132c" 
-    positions = clob_api.get_balances(market, user)
-    print(f"Positions: {positions}")
+    now = int(time.time())
+    interval = int(now // 900 * 900)
+    market = clob_api.get_market(interval)
+    # user = "0xe01ae9d586b428c251043368f808e678d4c4132c" 
+    # positions = clob_api.get_balances(market, user)
+    # print(f"Positions: {positions}")
+    holders_by_side = clob_api.get_holders(market)
+    # print(f"Holders by side: {holders_by_side}")
+    for side in holders_by_side:
+        print(f"Side: {side}")
+        for holder in holders_by_side[side]:
+            print(f"{holder['name']} {holder['amount']:.2f} shares {side} {holder['proxyWallet']} {clob_api.get_traded_count(holder['proxyWallet'])} trades")
 
 if __name__ == "__main__":
     main()

@@ -16,7 +16,7 @@ MIN_HOLDER_SIZE = 10000
 
 once = {}
 
-wallets = [
+whitelist = [
     "0xdac0abb17f6a20e728dbc03f97dfd83477df16d3",
     "0x0d3415b7a89d27c6901ea5c4c110a4cc532b5982",
     "0xedd0acc3af8e3dd6c71f75775e38c41de7b37dd7",
@@ -48,24 +48,40 @@ wallets = [
     "0xd9e5c9d17f6b6bb0b34738174b48d6f8a758f125",
     "0xb6348bcec72981b8c31264f4960549c53b6d1e83",
     "0x5b16eb52abb9ff43f758897c96cf901cfbf6ddbc",
-    # "0xd84c2b6d65dc596f49c7b6aadd6d74ca91e407b9", # not teacher
-    # "0xf9a70fa6c2709b023c22e39208ca0252339f416d", # maybe teacher
-    # "0x8c90bff94b638a64c0377cd66f4c5bcba4e46e09", # not teacher
 ]
-     
+for i in range(len(whitelist)):
+    whitelist[i] = whitelist[i].lower()
+
+blacklist = [
+    "0xb7297599d79d9bf3990b2ce312ffbacb17e84e2e", # Mojomatt77 not teacher
+    "0xe9da448ade045e7a9ddfe2a6a0da622fe0943b8e", # not teacher
+]
+for i in range(len(blacklist)):
+    blacklist[i] = blacklist[i].lower()
 
 def is_good(holder: dict) -> bool:
-    return holder["proxyWallet"].lower() in wallets
+    if holder["proxyWallet"].lower() in whitelist:
+        return True
+    if holder["proxyWallet"].lower() in blacklist:
+        return False
+    if holder['traded_count'] > 1000: 
+        return False
+    if holder['amount'] < 1000:
+        return False
+    return holder['amount'] > MIN_HOLDER_SIZE or holder['traded_count'] < 30
 
 def only_once(slug: str, side: str, holders: list) -> bool:
     ret = False
     for holder in holders:
         if is_good(holder):
-            print(f"holder: {holder['proxyWallet']}")
+            print(f"{holder['name']} {holder['proxyWallet']} {holder['amount']:.2f} shares {side} {holder['traded_count']} trades")
         key = f"{slug}-{side}-{holder['proxyWallet']}"
+        # print(f"key: {key}")
+        if once.get(key):
+            print(f"{key} in once")
         if is_good(holder) and not once.get(key):
             ret = True
-        once[key] = True
+            once[key] = True
     return ret
 
 def get_size(holders: list) -> float:
@@ -74,45 +90,39 @@ def get_size(holders: list) -> float:
         size += float(holder["amount"])
     return size
 
-
 def print_holders(interval: int, symbol: str):
     now = int(time.time())
     seconds_left = 900 - (now % 900)
 
     market = clob_api.get_market(interval, symbol)
-    rows = clob_api.get_holders(market)
-    for my_token, side in SIDES.items():
-        token_id = market.token_id(my_token)
-        for row in rows:
-            # print(f"row: {row}")
-            if int(row["token"]) != token_id:
+
+    holders_by_side = clob_api.get_holders(market)
+    for side in holders_by_side:
+        holders = holders_by_side[side]
+        slug = f"{symbol}-updown-15m-{interval}"
+
+        print(f"Printing holders for interval: {interval} {symbol} {side} {get_size(holders):.2f}")
+
+        if not only_once(slug, side, holders):
+            continue
+
+        num_wallets = 0
+        num_shares = 0
+        message = ""
+        for holder in holders:
+            if not is_good(holder):
                 continue
-            holders = row["holders"]
-            slug = f"{symbol}-updown-15m-{interval}"
+            num_wallets += 1
+            num_shares += float(holder["amount"])
 
-
-            print(f"Printing holders for interval: {interval} {symbol} {side} {get_size(holders):.2f}")
-
-            if not only_once(slug, side, holders):
+        message = f"""{num_wallets} fresh wallets with {100*num_shares / get_size(holders):.2f}% = {num_shares:.2f} / {get_size(holders):.2f} shares {side}\n<a href="https://polymarket.com/event/{slug}">{slug}</a>\n\n"""
+        for holder in holders:
+            if not is_good(holder):
                 continue
+            text = f"""<a href="https://polymarket.com/profile/{holder['proxyWallet']}">{holder['name']}</a> {holder['amount']:.2f} shares {side} {holder['traded_count']} trades\n"""
+            message += text
 
-            num_wallets = 0
-            num_shares = 0
-            message = ""
-            for holder in holders:
-                if not is_good(holder):
-                    continue
-                num_wallets += 1
-                num_shares += float(holder["amount"])
-
-            message = f"""{num_wallets} / {len(wallets)} wallets\n {num_shares:.2f} / {get_size(holders):.2f} shares {side}\n<a href="https://polymarket.com/event/{slug}">{slug}</a>\n\n"""
-            for holder in holders:
-                if not is_good(holder):
-                    continue
-                text = f"""<a href="https://polymarket.com/profile/{holder['proxyWallet']}">{holder['name']}</a> {holder['amount']:.2f} shares {side}\n"""
-                message += text
-
-            telegram.send_message(message, disable_web_page_preview=True)
+        telegram.send_message(message, disable_web_page_preview=True)
 
 def run():
     interval = int(time.time() // 900 * 900)
