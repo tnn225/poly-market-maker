@@ -5,6 +5,8 @@ import requests
 import csv
 from datetime import datetime, timezone
 
+from web3 import Web3
+
 from poly_market_maker.my_token import MyToken
 from poly_market_maker.market import Market
 from poly_market_maker.order import Order
@@ -15,6 +17,7 @@ from py_clob_client.exceptions import PolyApiException
 from poly_market_maker.utils.cache import KeyValueStore
 from poly_market_maker.constants import OK, DEBUG
 from poly_market_maker.metrics import clob_requests_latency
+from poly_market_maker.constants import WHITELIST, HOLDER_MIN_SIZE
 
 
 DEFAULT_PRICE = 0.5
@@ -30,6 +33,13 @@ HOST = "https://clob.polymarket.com"
 CHAIN_ID = 137
 PRIVATE_KEY = os.getenv("PRIVATE_KEY")
 FUNDER = os.getenv("FUNDER")
+RPC_URL = os.getenv("RPC_URL")
+
+# USDC.e (Bridged USDC) on Polygon
+USDC_E_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
+USDC_E_DECIMALS = 6
+
+ERC20_BALANCE_OF_ABI = [{"constant": True, "inputs": [{"name": "_owner", "type": "address"}], "name": "balanceOf", "outputs": [{"name": "balance", "type": "uint256"}], "payable": False, "stateMutability": "view", "type": "function"}]
 
 
 SIDES = {MyToken.A: "Up", MyToken.B: "Down"}
@@ -362,6 +372,7 @@ class ClobApi:
         print( f"Fetching market for slug: {slug}")
         condition_id = self.get_condition_id_by_slug(slug)
         self.markets[slug] = Market(condition_id, self.client.get_collateral_address())
+        self.amount_by_wallet = {}
         return self.markets[slug]
 
     def get_balances(self, market: Market, user: str = FUNDER):
@@ -437,11 +448,33 @@ class ClobApi:
             for row in rows:
                 if int(row["token"]) != token_id:
                     continue
-                holders = row["holders"]
+
+                holders = []
+                for holder in row["holders"]:
+                    if holder['proxyWallet'] in WHITELIST or float(holder['amount']) > HOLDER_MIN_SIZE:
+                        holders.append(holder)
+                holders = holders[:20]
+
                 for holder in holders:
+                    if len(holder['name']) >= 42:
+                        holder['name'] = holder['name'][:42]
+                        holder['name'] = holder['name'][:5] + '...' + holder['name'][-3:]
+                    holder['last_amount'] = self.amount_by_wallet.get(holder['proxyWallet'], 0)
                     holder['amount'] = float(holder['amount'])
+                    
                     holder['proxyWallet'] = holder['proxyWallet'].lower()
                     holder['traded_count'] = self.get_traded_count(holder['proxyWallet'])
+                    position = self.get_position(holder['proxyWallet'], market, token_id)
+                    if position:    
+                        print(f"position: {position}")
+                        holder['amount'] = float(position['size'])
+                        holder['avg_price'] = float(position['avg_price'])
+                        holder['cost'] = holder['amount'] * holder['avg_price']
+                    else:
+                        holder['avg_price'] = 0
+                        holder['cost'] = holder['amount'] * holder['avg_price']
+                    self.amount_by_wallet[holder['proxyWallet']] = holder['amount'] 
+
                 holders_by_side[side] = holders
         self.save_holders(holders_by_side, symbol)
         return holders_by_side
@@ -453,16 +486,61 @@ class ClobApi:
         """
         key = f"traded_count_{address}"
         if self.cache.exists(key):
-            return self.cache.get(key)
+            return int(self.cache.get(key))
         url = f"https://data-api.polymarket.com/traded?user={address}"
         response = requests.get(url)
         time.sleep(0.1)
         response.raise_for_status()
         data = response.json().get('traded', 0)
         self.cache.set(key, data)
-        return data
+        return int(data)
 
-def main():
+    def _web3(self) -> Web3:
+        if getattr(self, "_w3", None) is None and RPC_URL:
+            self._w3 = Web3(Web3.HTTPProvider(RPC_URL))
+        return self._w3
+
+    def get_balance(self, address: str) -> float:
+        """Return USDC.e balance at address via Polygon RPC (human-readable)."""
+        today = datetime.now().strftime("%Y-%m-%d") 
+        key = f"balance_{today}_{address}"
+        if self.cache.exists(key):
+            return float(self.cache.get(key))
+        if not RPC_URL:
+            self.logger.warning("RPC_URL not set, cannot get USDC.e balance")
+            return 0.0
+        w3 = self._web3()
+        try:
+            contract = w3.eth.contract(address=Web3.to_checksum_address(USDC_E_ADDRESS), abi=ERC20_BALANCE_OF_ABI)
+            raw = contract.functions.balanceOf(Web3.to_checksum_address(address)).call()
+            balance = float(raw) / (10**USDC_E_DECIMALS)
+            self.cache.set(key, balance)
+            print(f"{address}: {balance} USDC.e")
+            time.sleep(10)
+            return balance
+        except Exception as e:
+            self.logger.error(f"Error getting USDC.e balance for {address}: {e}")
+            return 0.0
+
+    def get_position(self, address: str, market: Market, token_id: int) -> dict:
+        params = {
+            "sizeThreshold": 1,
+            "limit": 100,
+            "sortBy": "TOKENS",
+            "sortDirection": "DESC",
+            "user": address,
+            "market": market.condition_id,
+        }
+        url = "https://data-api.polymarket.com/positions"
+        response = requests.get(url, params=params)
+
+        response.raise_for_status()
+
+        # print(f"response.json(): {response.json()}")
+        positions = self._parse_positions(response.json())
+        return positions.get(token_id, None)
+
+def test_holders():
     clob_api = ClobApi()
     now = int(time.time())
     interval = int(now // 900 * 900)
@@ -477,5 +555,25 @@ def main():
         for holder in holders_by_side[side]:
             print(f"{holder['name']} {holder['amount']:.2f} shares {side} {holder['proxyWallet']} {clob_api.get_traded_count(holder['proxyWallet'])} trades")
 
+def test_balance():
+    clob_api = ClobApi()
+    balance_by_wallet = {}
+    today = datetime.now().strftime("%Y-%m-%d")
+    for address in WHITELIST:
+        balance = clob_api.get_balance(address)
+        balance_by_wallet[address] = balance
+        print(f"{address}: {balance} USDC.e")
+    with open(f'./data/balance_{today}.csv', 'w') as f:
+        writer = csv.writer(f)
+        writer.writerow(['address', 'balance'])
+        for address, balance in sorted(
+            balance_by_wallet.items(), key=lambda x: x[1], reverse=True
+        ):
+            writer.writerow([address, balance])
+
+def main():
+    # test_holders()
+    test_balance()
+ 
 if __name__ == "__main__":
     main()

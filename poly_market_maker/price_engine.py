@@ -193,6 +193,12 @@ class PriceEngine(threading.Thread):
         with self.lock:
             return self.target
         
+    def get_delta(self):
+        with self.lock:
+            if self.price is None or self.target is None:
+                return None
+            return float(self.price - self.target)
+        
     def get_data(self):
         with self.lock:
             if self.timestamp is None or self.price is None or self.target is None:

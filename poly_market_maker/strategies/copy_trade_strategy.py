@@ -17,7 +17,7 @@ class CopyTradeStrategy(BaseStrategy):
         super().__init__(interval)
         self.buy_token_a = True
         self.buy_token_b = True
-        self.buy_prices = [0.05, 0.10, 0.15]
+        self.buy_prices = [0.05, 0.10, 0.15, 0,20, 0.30]
 
     def trade(self):
         balances = self.clob_api.get_balances(self.market, ADDRESS)
