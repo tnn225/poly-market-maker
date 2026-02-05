@@ -5,6 +5,8 @@ import random
 import warnings
 import yaml
 from logging import config
+import csv
+from datetime import datetime
 
 # Suppress pkg_resources deprecation warning from web3
 warnings.filterwarnings("ignore", category=UserWarning, message=".*pkg_resources is deprecated.*")
@@ -116,3 +118,17 @@ def format_address(address: str) -> str:
     address = address[:42]
     address = address[:5] + '...' + address[-3:]
     return address
+
+def get_sifu_addresses():
+    today = datetime.now().strftime("%Y-%m-%d")
+    filename = f'./data/balance/balance_{today}.csv'
+    if not os.path.exists(filename):
+        filename = f'./data/balance/balance.csv'
+    addresses = []
+    with open(filename, 'r') as f:
+        reader = csv.reader(f)
+        for row in reader:
+            address = row[0].lower()
+            if "0x" in address and address not in addresses:
+                addresses.append(address)
+    return addresses

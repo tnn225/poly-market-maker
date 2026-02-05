@@ -18,6 +18,7 @@ from poly_market_maker.utils.cache import KeyValueStore
 from poly_market_maker.constants import OK, DEBUG
 from poly_market_maker.metrics import clob_requests_latency
 from poly_market_maker.constants import WHITELIST, HOLDER_MIN_SIZE
+from poly_market_maker.utils.common import format_address
 
 
 DEFAULT_PRICE = 0.5
@@ -390,7 +391,7 @@ class ClobApi:
         response.raise_for_status()
 
         # print(f"response.json(): {response.json()}")
-        positions = self._parse_positions(response.json())
+        positions = self._parse_positions(response.json(), user)
         # print(f"positions: {positions}")
         # print(market.token_ids[MyToken.A], market.token_ids[MyToken.B])
         balances = {
@@ -400,16 +401,20 @@ class ClobApi:
         self.logger.info(f"balances: {balances}")
         return balances
 
-    def _parse_positions(self, positions: list) -> list:
+    def _parse_positions(self, positions: list, address: str) -> list:
         """Parse and format position data."""
 
         parsed = {}
         for pos in positions:
-            asset_id = int(pos.get('asset'))
-            parsed[asset_id] = {
+            token_id = int(pos.get('asset'))
+            parsed[token_id] = {
+                'address': address,
+                'name': format_address(address),
+                'token_id': token_id,
                 'outcome': pos.get('outcome'),
                 'size': float(pos.get('size')),
                 'avg_price': pos.get('avgPrice'),
+                'cost': float(pos.get('size')) * float(pos.get('avgPrice')),
                 'current_price': pos.get('curPrice'),
                 'initial_value': pos.get('initialValue'),
                 'current_value': pos.get('currentValue'),
@@ -432,10 +437,10 @@ class ClobApi:
             writer = csv.writer(f)
             # Only write header if file is new or empty
             if not file_exists:
-                writer.writerow(['timestamp', 'interval', 'side', 'name', 'amount', 'traded_count', 'proxyWallet'])
+                writer.writerow(['timestamp', 'interval', 'side', 'name', 'amount', 'proxyWallet'])
             for side in holders_by_side:
                 for holder in holders_by_side[side]:
-                    writer.writerow([now, interval, side, holder['name'], holder['amount'], holder['traded_count'], holder['proxyWallet']])
+                    writer.writerow([now, interval, side, holder['name'], holder['amount'], holder['proxyWallet']])
 
     def get_holders(self, market: Market, symbol: str = 'btc'):
         url = f"https://data-api.polymarket.com/holders?market={market.condition_id}"
@@ -451,29 +456,11 @@ class ClobApi:
 
                 holders = []
                 for holder in row["holders"]:
-                    if holder['proxyWallet'] in WHITELIST or float(holder['amount']) > HOLDER_MIN_SIZE:
-                        holders.append(holder)
-                holders = holders[:20]
-
-                for holder in holders:
                     if len(holder['name']) >= 42:
-                        holder['name'] = holder['name'][:42]
-                        holder['name'] = holder['name'][:5] + '...' + holder['name'][-3:]
-                    holder['last_amount'] = self.amount_by_wallet.get(holder['proxyWallet'], 0)
+                        holder['name'] = format_address(holder['name'])
                     holder['amount'] = float(holder['amount'])
-                    
                     holder['proxyWallet'] = holder['proxyWallet'].lower()
-                    holder['traded_count'] = self.get_traded_count(holder['proxyWallet'])
-                    position = self.get_position(holder['proxyWallet'], market, token_id)
-                    if position:    
-                        print(f"position: {position}")
-                        holder['amount'] = float(position['size'])
-                        holder['avg_price'] = float(position['avg_price'])
-                        holder['cost'] = holder['amount'] * holder['avg_price']
-                    else:
-                        holder['avg_price'] = 0
-                        holder['cost'] = holder['amount'] * holder['avg_price']
-                    self.amount_by_wallet[holder['proxyWallet']] = holder['amount'] 
+                    holders.append(holder)
 
                 holders_by_side[side] = holders
         self.save_holders(holders_by_side, symbol)
@@ -503,7 +490,7 @@ class ClobApi:
     def get_balance(self, address: str) -> float:
         """Return USDC.e balance at address via Polygon RPC (human-readable)."""
         today = datetime.now().strftime("%Y-%m-%d") 
-        key = f"balance_{today}_{address}"
+        key = f"balance_{today}_2_{address}"
         if self.cache.exists(key):
             return float(self.cache.get(key))
         if not RPC_URL:
@@ -522,7 +509,7 @@ class ClobApi:
             self.logger.error(f"Error getting USDC.e balance for {address}: {e}")
             return 0.0
 
-    def get_position(self, address: str, market: Market, token_id: int) -> dict:
+    def get_positions(self, address: str, market: Market) -> dict:
         params = {
             "sizeThreshold": 1,
             "limit": 100,
@@ -537,7 +524,12 @@ class ClobApi:
         response.raise_for_status()
 
         # print(f"response.json(): {response.json()}")
-        positions = self._parse_positions(response.json())
+        positions = self._parse_positions(response.json(), address)
+        time.sleep(0.1)
+        return positions
+
+    def get_position(self, address: str, market: Market, token_id: int) -> dict:
+        positions = self.get_positions(address, market)
         return positions.get(token_id, None)
 
 def test_holders():
@@ -563,7 +555,7 @@ def test_balance():
         balance = clob_api.get_balance(address)
         balance_by_wallet[address] = balance
         print(f"{address}: {balance} USDC.e")
-    with open(f'./data/balance_{today}.csv', 'w') as f:
+    with open(f'./data/balance/balance_{today}.csv', 'w') as f:
         writer = csv.writer(f)
         writer.writerow(['address', 'balance'])
         for address, balance in sorted(
