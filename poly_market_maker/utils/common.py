@@ -120,10 +120,10 @@ def format_address(address: str) -> str:
     return address
 
 def get_sifu_addresses():
-    today = datetime.now().strftime("%Y-%m-%d")
-    filename = f'./data/balance/balance_{today}.csv'
-    if not os.path.exists(filename):
-        filename = f'./data/balance/balance.csv'
+    # today = datetime.now().strftime("%Y-%m-%d")
+    # filename = f'./data/balance/balance_{today}.csv'
+    # if not os.path.exists(filename):
+    filename = f'./data/balance/balance.csv'
     addresses = []
     with open(filename, 'r') as f:
         reader = csv.reader(f)
