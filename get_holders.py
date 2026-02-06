@@ -20,7 +20,9 @@ from poly_market_maker.constants import (
 )
 # from poly_market_maker.price_engine import PriceEngine
 
-emoji = '🧠'
+emoji_sifu = '🧠'
+emoji_fresh = '🐥'
+
 setup_logging()
 logger = logging.getLogger(__name__)
 
@@ -35,12 +37,14 @@ SYMBOLS = ["btc"] # , "eth", "sol", "xrp"]
 
 sifu_sizes = {}
 last_sifu_sizes = {}
+fresh_sizes = {}
+last_fresh_sizes = {}
 once = {}
 
 def is_good(holder: dict) -> bool:
     if holder['proxyWallet'] in sifu_addresses:
         return True
-    return holder['amount'] > HOLDER_MIN_SIZE
+    return holder['amount'] > HOLDER_MIN_SIZE or holder['trades'] < 30
 
 def only_once(slug: str, side: str, holders: list) -> bool:
     ret = False
@@ -76,14 +80,25 @@ def get_num_sifu_wallets(holders: list) -> int:
             num += 1
     return num
 
-def format_diff(diff: float, use_html: bool = False) -> str:
+def get_fresh_size(holders: list) -> float:
+    size = 0
+    for holder in holders:
+        if holder['trades'] < 30:
+            size += float(holder["amount"])
+    return size
+
+def get_num_fresh_wallets(holders: list) -> int:
+    num = 0
+    for holder in holders:
+        if holder['trades'] < 30:
+            num += 1
+    return num
+
+def format_diff(diff: float) -> str:
     """Format difference with color/formatting if > 0"""
     formatted = f"{diff:+.0f}"
     if diff > 0:
-        if use_html:
-            return f"<b>{formatted}</b>"
-        else:
-            return f"\033[92m{formatted}\033[0m"  # ANSI green
+        return f"<b>{formatted}🟢</b>"
     return formatted
 
 def print_holders(interval: int, symbol: str = "btc"):
@@ -98,24 +113,30 @@ def print_holders(interval: int, symbol: str = "btc"):
         holders = holders_by_side[side]
         slug = f"{symbol}-updown-15m-{interval}"
 
+        total_size = get_size(holders)
+        num_sifu_wallets = get_num_sifu_wallets(holders)
         last_sifu_sizes[side] = sifu_sizes.get(side, 0)
         sifu_sizes[side] = get_sifu_size(holders)
         sifu_size = sifu_sizes[side]
         last_sifu_size = last_sifu_sizes[side]
-        total_size = get_size(holders)
-        num_sifu_wallets = get_num_sifu_wallets(holders)
-
         diff = sifu_size - last_sifu_size
-        text = f"{emoji} {100*sifu_size / total_size:.0f}% = {sifu_size:.0f} ({format_diff(diff)}) / {total_size:.0f} shares {num_sifu_wallets} wallets {side}"
 
-        if total_size < MIN_TOTAL_SIZE and (DEBUG or not only_once(slug, side, holders)) and num_sifu_wallets == 0:
-            print(f"Skipping {slug} {text}")
+        sifu_text = f"{emoji_sifu} {100*sifu_size / total_size:.0f}% = {sifu_size:.0f} ({format_diff(diff)}) / {total_size:.0f} shares {num_sifu_wallets} wallets"
+
+        num_fresh_wallets = get_num_fresh_wallets(holders)
+        fresh_size = get_fresh_size(holders)
+        fresh_text = f"{emoji_fresh} {100*fresh_size / total_size:.0f}% = {fresh_size:.0f} / {total_size:.0f} shares {num_fresh_wallets} wallets"
+
+        if total_size < MIN_TOTAL_SIZE and only_once(slug, side, holders) and num_sifu_wallets == 0:
+            print(f"Skipping {slug} {side} \n {fresh_text} \n {sifu_text}")
             continue
         
         # price = bid if side == "Up" else (1 - ask)
         message = "\n".join([
-            text,
-            f"<a href=\"https://polymarket.com/event/{slug}\">{slug}</a>",
+            fresh_text,
+            f"\n{sifu_text}\n" if num_sifu_wallets > 0 else "",
+            f"<a href=\"https://polymarket.com/event/{slug}\">{slug}</a> {side}",
+            "",
             "",
         ])
 
@@ -123,9 +144,10 @@ def print_holders(interval: int, symbol: str = "btc"):
             if not is_good(holder):
                 continue
 
-            sifu = '㊙️ ' if holder['proxyWallet'] in sifu_addresses else ''
-
-            text = f"{sifu}<a href=\"https://polymarket.com/profile/{holder['proxyWallet']}\">{holder['name']}</a> {holder['amount']:.2f} shares {side}\n"
+            emoji = ""
+            emoji += f'{emoji_sifu} ' if holder['proxyWallet'] in sifu_addresses else ''
+            emoji += f'{emoji_fresh} ' if holder['trades'] < 30 else ''
+            text = f"{emoji}<a href=\"https://polymarket.com/profile/{holder['proxyWallet']}\">{holder['name']}</a> {holder['amount']:.2f} shares\n"
             message += text
 
         key = f"{slug}-{side}"

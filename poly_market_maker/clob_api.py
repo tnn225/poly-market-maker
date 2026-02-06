@@ -460,6 +460,7 @@ class ClobApi:
                         holder['name'] = format_address(holder['name'])
                     holder['amount'] = float(holder['amount'])
                     holder['proxyWallet'] = holder['proxyWallet'].lower()
+                    holder['trades'] = self.get_traded_count(holder['proxyWallet'])
                     holders.append(holder)
 
                 holders_by_side[side] = holders
