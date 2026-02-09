@@ -106,6 +106,10 @@ def print_holders(interval: int, symbol: str = "btc"):
     now = int(time.time())
     seconds_left = 900 - (now % 900)
 
+    if seconds_left > 300:
+        print(f"Skipping {interval} {symbol} {seconds_left} seconds left")
+        return
+
     market = clob_api.get_market(interval, symbol)
 
     holders_by_side = clob_api.get_holders(market)
