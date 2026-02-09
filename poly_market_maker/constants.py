@@ -14,7 +14,7 @@ DEBUG = False
 
 # get_holders thresholds (relaxed when DEBUG)
 HOLDER_MIN_SIZE = 1000 if DEBUG else 10000
-MIN_TOTAL_SIZE = 1000 if DEBUG else 50000
+MIN_TOTAL_SIZE = 1000 if DEBUG else 60000
 MAX_TRADED_COUNT = 1000 if DEBUG else 30
 
 

@@ -1,11 +1,19 @@
 import time
+
+import pandas as pd
+
 from datetime import datetime, timezone, timedelta
+
 from poly_market_maker.order import Order, Side
 from poly_market_maker.my_token import MyToken
 from poly_market_maker.clob_api import ClobApi
 from poly_market_maker.strategies.simple_order import SimpleOrder
 from poly_market_maker.binance import Binance
+from poly_market_maker.utils.telegram import Telegram
 
+
+
+telegram = Telegram()
 MIN_SIZE = 10
 
 clob_api = ClobApi()
@@ -15,8 +23,6 @@ class TradeManager:
         self.clob_api = clob_api
         self.market = clob_api.get_market(interval)
         self.interval = interval
-        self.amm_a = SimpleOrder(token=MyToken.A)
-        self.amm_b = SimpleOrder(token=MyToken.B)
 
     def place_order(self, new_order: Order) -> Order:
         order_id = self.clob_api.place_order(
@@ -33,79 +39,69 @@ class TradeManager:
             token=new_order.token,
         )
 
-    def trade(self, seconds_left: int, probability: float):
-        print(f"trade interval: {self.interval} seconds_left: {seconds_left} probability: {probability}")
-        if probability > 0.5699:
-            self.orders = self.amm_a.get_buy_orders()
-            for order in self.orders:
-                print(f"trade delta: {probability} order: {order}")
-                self.place_order(order)
-
-        if probability < 0.4381:
-            self.orders = self.amm_b.get_buy_orders()
-            for order in self.orders:
-                print(f"trade delta: {probability} order: {order}")
-                self.place_order(order)
-
-
-def get_probability(binance: Binance, model, feature_cols: list[str], seconds_left: int, interval: int):
-    df = binance.get_df(start_time=datetime.now(timezone.utc) - timedelta(hours=1), end_time=datetime.now(timezone.utc))
-    df = binance.add_features(df)
-    df['probability'] = model.predict_proba(df[feature_cols])[:, 1]
-
-    # df['interval'] = df['open_time'] + 900
-
-    print(df[['open_time', 'probability', 'is_up', 'label']])
-    # Return probability at open_time == interval
-    row = df[df['open_time'] == interval-900] # preciou 15-min ago
-    probability = row['probability'].iloc[0] if not row.empty else 0.5
-    print(f"{seconds_left} interval: {interval} probability: {probability}")
-    return probability
-
-def main():
-    interval = 0
-    trade_manager = None
-    has_orders = False
-    probability = 0.5
-
+def get_df():
     binance = Binance(symbol="BTCUSDT", interval="15m")
-    train_df, test_df = binance.train_test_split()
-    model = binance.get_model()
-    feature_cols = binance.feature_cols
+    df = binance.get_df(start_time=datetime.now(timezone.utc) - timedelta(hours=24), end_time=datetime.now(timezone.utc))
+    df = binance.add_features(df)
+    return df 
 
-    while True:
+def is_spike(df: pd.DataFrame, interval: int):
+    df = df[df['open_time'] == interval]
+    if df.empty:
+        return False
+    return df['is_spike'].iloc[0]
+
+def get_delta(df: pd.DataFrame, interval: int):
+    df = df[df['open_time'] == interval]
+    if df.empty:
+        return 0
+    return df['delta'].iloc[0]
+
+def is_up(df: pd.DataFrame, interval: int):
+    df = df[df['open_time'] == interval]
+    if df.empty:
+        return False
+    return df['is_up'].iloc[0]
+
+def test_spike():
+    df = get_df()
+    df['next_is_up'] = df['is_up'].shift(-1)
+
+    df = df[df['is_spike'] == True]
+    print(df[['open_time', 'is_spike', 'delta', 'is_up', 'next_is_up']])
+
+def run_sequence(interval: int, shares: int, is_up: bool):
+    if shares > 1600: 
+        return False
+    trade_manager = TradeManager(interval)
+    order = Order(price=0.50, size=shares, side=Side.BUY, token=MyToken.A.value if is_up else MyToken.B.value)
+    trade_manager.place_order(order)
+
+    while int(time.time()) <= interval + 900:
         time.sleep(1)
 
-        """
-        data = price_engine.get_data()
-        if data is None:
-            print("No price data")
-            continue
+    df = get_df()
 
-        price = data.get('price')
-        target = data.get('target')
-        if price is None or target is None:
-            continue
-        delta = price - target
-        """
+    if is_up(df, interval) != is_up:
+        run_sequence(interval+900, shares * 2, is_up)
+
+def main():
+    while True:
+        time.sleep(1)
         now = int(time.time())
+        if now % 900 != 0:
+            continue
+
         seconds_left = 900 - (now % 900)
-        if seconds_left % 60 == 0:
-            probability = get_probability(binance, model, feature_cols, seconds_left, now // 900 * 900)
-            # clob_api.print_holders(now // 900 * 900)
+        interval = now // 900 * 900 
+        print(f"interval: {interval}")
+        previous_interval = interval - 900
 
-        if now // 900 * 900 > interval and seconds_left > 840:  # 15-min intervals
-
-            interval = now // 900 * 900
-            probability = get_probability(binance, model, feature_cols, seconds_left, interval) 
-
-            trade_manager = TradeManager(interval)
-            trade_manager.trade(seconds_left, probability)
-            has_orders = True
-
-        if trade_manager is not None and seconds_left < 600 and has_orders:
-            trade_manager.clob_api.cancel_all_orders()
-            has_orders = False
+        df = get_df()
+        if is_spike(df, previous_interval):
+            is_up = is_up(df, previous_interval)
+            target = not is_up
+            run_sequence(interval, 100, target)
 
 if __name__ == "__main__":
     main()

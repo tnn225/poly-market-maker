@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 clob_api = ClobApi()
 telegram = Telegram()
 sifu_addresses = get_sifu_addresses()
+print(f"sifu_addresses: {sifu_addresses}")
 
  # engine = PriceEngine(symbol="btc/usd")
 

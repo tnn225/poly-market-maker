@@ -84,6 +84,9 @@ class Binance:
         return df
 
     def add_features(self, df):
+        df["volume_ma50"] = df["volume"].rolling(window=50).mean()
+        df["is_spike"] = (df["volume"] > 2 * df["volume_ma50"]) & (df["volume"] > 2 * df["volume"].shift(1))
+
         df["taker_sell_base_vol"] = df["volume"] - df["taker_buy_base_vol"]
         df["taker_sell_quote_vol"] = df["quote_volume"] - df["taker_buy_quote_vol"]
 
