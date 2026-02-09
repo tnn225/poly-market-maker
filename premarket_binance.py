@@ -71,7 +71,7 @@ def test_spike():
     print(df[['open_time', 'is_spike', 'delta', 'is_up', 'next_is_up']])
 
 def run_sequence(interval: int, shares: int, is_up: bool):
-    if shares > 1600: 
+    if shares > 160: 
         return False
     trade_manager = TradeManager(interval)
     order = Order(price=0.50, size=shares, side=Side.BUY, token=MyToken.A.value if is_up else MyToken.B.value)
@@ -90,6 +90,7 @@ def main():
         time.sleep(1)
         now = int(time.time())
         if now % 900 != 0:
+            print(f"not 900 seconds: {now % 900}")
             continue
 
         seconds_left = 900 - (now % 900)
@@ -101,7 +102,7 @@ def main():
         if is_spike(df, previous_interval):
             is_up = is_up(df, previous_interval)
             target = not is_up
-            run_sequence(interval, 100, target)
+            run_sequence(interval, 10, target)
 
 if __name__ == "__main__":
     main()
