@@ -48,13 +48,13 @@ class SequenceStrategy(BaseStrategy):
 
         self.last_orders_time = 0
         self.orders = self.get_orders()
-        self.shares = {MyToken.A: 0, MyToken.B: 0}
+        self.balances = {MyToken.A: 0, MyToken.B: 0}
 
     def trade(self):
-        self.shares = self.clob_api.get_shares(self.market)
+        self.balances = self.clob_api.get_shares(self.market)
 
-        if self.shares[MyToken.A] + self.shares[MyToken.B] > MAX_SHARES:
-            self.logger.error(f"Shares is too high: {self.shares[MyToken.A] + self.shares[MyToken.B]:.2f}")
+        if self.balances[MyToken.A] + self.balances[MyToken.B] > MAX_SHARES:
+            self.logger.error(f"Shares is too high: {self.balances[MyToken.A] + self.balances[MyToken.B]:.2f}")
             return
 
         bid, ask = self.order_book_engine.get_bid_ask(MyToken.A)
@@ -92,7 +92,7 @@ class SequenceStrategy(BaseStrategy):
             self.orders = self.get_orders()
 
     def run(self):
-        while int(time.time()) <= self.interval + 900 and self.shares[self.mytoken] + MIN_SIZE <= self.shares:
+        while int(time.time()) <= self.interval + 900 and self.balances[self.mytoken] + MIN_SIZE <= self.shares:
             time.sleep(1)
 
             data = self.price_engine.get_data()
@@ -109,8 +109,8 @@ class SequenceStrategy(BaseStrategy):
 
         self.order_book_engine.stop()
 
-        if self.shares[self.mytoken] + MIN_SIZE <= self.shares:
-            self.logger.error(f"Shares is too low: {self.shares[self.mytoken] + MIN_SIZE:.2f}")
+        if self.balances[self.mytoken] + MIN_SIZE <= self.shares:
+            self.logger.error(f"Shares is too low: {self.balances[self.mytoken] + MIN_SIZE:.2f}")
             return False
 
         self.logger.info("Sequence strategy finished running")

@@ -82,9 +82,9 @@ def run_sequence(interval: int, shares: int, is_up: bool):
 
     strategy = SequenceStrategy(interval, shares, is_up)
     if not strategy.run():
-        telegram.send_message(f"{url} {shares} shares {side} shares {strategy.shares[strategy.mytoken]}: too low")
+        telegram.send_message(f"{url} {shares} shares {side} balances {strategy.balances[strategy.mytoken]}: too low")
         return False
-    telegram.send_message(f"{url} {interval} {shares} shares {side} shares {strategy.shares[strategy.mytoken]}: success")
+    telegram.send_message(f"{url} {interval} {shares} shares {side} balances {strategy.balances[strategy.mytoken]}: success")
 
     while int(time.time()) <= interval + 900:
         time.sleep(1)
