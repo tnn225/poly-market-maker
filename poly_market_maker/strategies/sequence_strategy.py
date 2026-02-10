@@ -106,6 +106,8 @@ class SequenceStrategy(BaseStrategy):
                 self.logger.error(f"No price {self.price} or target {self.target}")
                 continue 
             self.trade()
+            time.sleep(9)
+
 
         self.order_book_engine.stop()
 

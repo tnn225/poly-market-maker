@@ -84,9 +84,9 @@ def run_sequence(interval: int, shares: int, is_up: bool):
     if not strategy.run():
         telegram.send_message(f"{url} {shares} shares {side} balances {strategy.balances[strategy.mytoken]}: too low")
         return False
-    telegram.send_message(f"{url} {interval} {shares} shares {side} balances {strategy.balances[strategy.mytoken]}: success")
+    telegram.send_message(f"{url} {shares} shares {side} balances {strategy.balances[strategy.mytoken]}: success")
 
-    while int(time.time()) <= interval + 900:
+    while int(time.time()) <= interval + 840:
         time.sleep(1)
         now = int(time.time())
         seconds_left = 900 - (now % 900)
@@ -95,7 +95,8 @@ def run_sequence(interval: int, shares: int, is_up: bool):
             delta = get_delta(df, interval)
             if get_is_up(df, interval) != is_up and abs(delta) > 500:
                 break
-    if get_is_up(df, interval) != is_up and abs(delta) > 500:
+    df = get_df()
+    if get_is_up(df, interval) != is_up:
         return run_sequence(interval+900, shares * 2, is_up)
 
     return True
@@ -106,7 +107,7 @@ def main():
         now = int(time.time())
         seconds_left = 900 - (now % 900)
 
-        if seconds_left < 800:
+        if 60 <= seconds_left <= 840:
             print(f"seconds left: {seconds_left}")
             continue
 
