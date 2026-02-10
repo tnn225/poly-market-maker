@@ -14,7 +14,8 @@ from poly_market_maker.utils.telegram import Telegram
 
 
 telegram = Telegram()
-MIN_SIZE = 10
+MIN_SHARES = 10
+MAX_SHARES = MIN_SHARES * 16
 
 clob_api = ClobApi()
 
@@ -57,7 +58,7 @@ def get_delta(df: pd.DataFrame, interval: int):
         return 0
     return df['delta'].iloc[0]
 
-def is_up(df: pd.DataFrame, interval: int):
+def get_is_up(df: pd.DataFrame, interval: int):
     df = df[df['open_time'] == interval]
     if df.empty:
         return False
@@ -71,38 +72,41 @@ def test_spike():
     print(df[['open_time', 'is_spike', 'delta', 'is_up', 'next_is_up']])
 
 def run_sequence(interval: int, shares: int, is_up: bool):
-    if shares > 160: 
+    if shares > MAX_SHARES: 
+        telegram.send_message(f"run_sequence {interval}, is_up {is_up} - {shares} shares too high")
         return False
+    telegram.send_message(f"run_sequence {interval}, is_up {is_up} - {shares} shares")
     trade_manager = TradeManager(interval)
-    order = Order(price=0.50, size=shares, side=Side.BUY, token=MyToken.A.value if is_up else MyToken.B.value)
+    order = Order(price=0.50, size=shares, side=Side.BUY, token=MyToken.A if is_up else MyToken.B)
     trade_manager.place_order(order)
 
-    while int(time.time()) <= interval + 900:
+    while int(time.time()) <= interval + 780:
         time.sleep(1)
 
     df = get_df()
 
-    if is_up(df, interval) != is_up:
+    if get_is_up(df, interval) != is_up:
         run_sequence(interval+900, shares * 2, is_up)
 
 def main():
     while True:
         time.sleep(1)
         now = int(time.time())
-        if now % 900 != 0:
-            print(f"not 900 seconds: {now % 900}")
+        seconds_left = 900 - (now % 900)
+
+        if seconds_left < 800:
+            print(f"seconds left: {seconds_left}")
             continue
 
-        seconds_left = 900 - (now % 900)
         interval = now // 900 * 900 
         print(f"interval: {interval}")
         previous_interval = interval - 900
 
         df = get_df()
-        if is_spike(df, previous_interval):
-            is_up = is_up(df, previous_interval)
+        if True or is_spike(df, previous_interval):
+            is_up = get_is_up(df, previous_interval)
             target = not is_up
-            run_sequence(interval, 10, target)
+            run_sequence(interval, MIN_SHARES, target)
 
 if __name__ == "__main__":
     main()
