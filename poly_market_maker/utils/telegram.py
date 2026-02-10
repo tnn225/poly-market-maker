@@ -29,7 +29,7 @@ class Telegram:
         
         self._initialized = True
 
-    def send_message(self, message: str, disable_web_page_preview: bool = False) -> bool:
+    def send_message(self, message: str, disable_web_page_preview: bool = True) -> bool:
         """Send a message to the Telegram group."""
         if not self.bot_token or not self.chat_id:
             logger.warning("Telegram not configured, skipping message")

@@ -19,6 +19,7 @@ from poly_market_maker.constants import OK, DEBUG
 from poly_market_maker.metrics import clob_requests_latency
 from poly_market_maker.constants import WHITELIST, HOLDER_MIN_SIZE
 from poly_market_maker.utils.common import format_address
+from py_clob_client.clob_types import AssetType, BalanceAllowanceParams
 
 
 DEFAULT_PRICE = 0.5
@@ -533,6 +534,24 @@ class ClobApi:
         positions = self.get_positions(address, market)
         return positions.get(token_id, None)
 
+    def get_balance_allowance(self, address: str, token_id: int) -> float:
+        resp = self.client.get_balance_allowance(
+            params=BalanceAllowanceParams(
+                asset_type=AssetType.CONDITIONAL,
+                token_id=token_id,
+            )
+        )
+        print(f"resp: {resp}")
+
+        return float(resp.get('balance', 0)) / 10**6
+
+    def get_shares(self, market: Market, user: str = FUNDER) -> dict:
+        shares = {
+            MyToken.A: self.get_balance_allowance(user, market.token_ids[MyToken.A]),
+            MyToken.B: self.get_balance_allowance(user, market.token_ids[MyToken.B]),
+        }
+        return shares
+
 def test_holders():
     clob_api = ClobApi()
     now = int(time.time())
@@ -564,9 +583,19 @@ def test_balance():
         ):
             writer.writerow([address, balance])
 
+def test_shares():
+    clob_api = ClobApi()
+    now = int(time.time())
+    interval = int(now // 900 * 900)
+    market = clob_api.get_market(interval)
+    shares = clob_api.get_shares(market)
+    print(f"Shares: {shares}")
+
 def main():
     # test_holders()
-    test_balance()
+    # test_balance()
+    test_shares()
+
  
 if __name__ == "__main__":
     main()
