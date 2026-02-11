@@ -48,6 +48,7 @@ class SequenceStrategy(BaseStrategy):
 
         self.last_orders_time = 0
         self.orders = self.get_orders()
+        self.order = self.orders[0] if len(self.orders) > 0 else None
         self.balances = {MyToken.A: 0, MyToken.B: 0}
 
     def trade(self):
@@ -66,30 +67,15 @@ class SequenceStrategy(BaseStrategy):
         delta = self.price - self.target
         self.logger.info(f"price: {self.price:.2f} ({delta:+.2f}) bid: {bid:.2f} ask: {ask:.2f}")
 
-        self.orders = self.get_orders()
-
-        orders = []
-
-        buy_price = round(bid, 2)
-        sell_price = round(1 - ask, 2)
+        price = round(bid, 2) if self.is_up else round(1 - ask, 2)
         size = self.shares - self.balances[self.mytoken]
-        if 0.01 <= buy_price <= 0.99 and 0.01 <= sell_price <= 0.99:
-            buy_order = Order(price=buy_price, size=size, side=Side.BUY, token=MyToken.A)
-            sell_order = Order(price=sell_price, size=size, side=Side.BUY, token=MyToken.B)
-            if self.is_up:
-                orders.append(buy_order)
-            else:
-                orders.append(sell_order)
-
-        self.orders = self.get_orders()
-        (orders_to_cancel, orders_to_place) = self.get_orders_to_cancel_and_place(orders)
-        print(f"  Orders_to_cancel: {orders_to_cancel} Orders_to_place: {orders_to_place} Orders: {self.orders}")
-
-        if not DEBUG and len(orders_to_cancel) + len(orders_to_place) > 0:
-            self.cancel_orders(orders_to_cancel)
-            self.place_orders(orders_to_place)
-            self.last_orders_time = 0
-            self.orders = self.get_orders()
+        self.order = self.clob_api.get_order(self.order['id']) if self.order is not None else None
+        if 0.01 <= price <= 0.99 and size >= MIN_SIZE and (self.order is None or price > self.order['price']):
+            if self.order is not None:
+                print(f"Cancelling order {self.order}")
+                self.clob_api.cancel_order(self.order['id'])
+            self.order = self.place_order(Order(price=price, size=size, side=Side.BUY, token=self.mytoken))
+            print(f"Placing order {self.order}")
 
     def run(self):
         while int(time.time()) <= self.interval + 900 and self.balances[self.mytoken] + MIN_SIZE <= self.shares:
@@ -106,8 +92,6 @@ class SequenceStrategy(BaseStrategy):
                 self.logger.error(f"No price {self.price} or target {self.target}")
                 continue 
             self.trade()
-            time.sleep(9)
-
 
         self.order_book_engine.stop()
 

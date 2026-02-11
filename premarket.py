@@ -111,7 +111,7 @@ def main():
             print(f"seconds left: {seconds_left}")
             continue
 
-        interval = now // 900 * 900 
+        interval = (now + 60) // 900 * 900 
         print(f"interval: {interval}")
         previous_interval = interval - 900
 
