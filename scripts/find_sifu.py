@@ -41,7 +41,7 @@ def find_intervals(df: pd.DataFrame) -> list:
     if missing:
         raise ValueError(f"df missing columns for find_intervals: {missing}")
 
-    view = df[(df["seconds_left"] >= 0) & (df["seconds_left"] <= 60) & (df["is_up"] == True) & (df["delta"] < 0)].copy()
+    view = df[(df["seconds_left"] >= 0) & (df["seconds_left"] <= 60) & ((df["is_up"] & (df["delta"] < 0)) | (~df["is_up"] & (df["delta"] >= 0)))].copy()
     return view["interval"].unique().tolist()
 
 def print_top_wallets(df: pd.DataFrame, top: int = 100):

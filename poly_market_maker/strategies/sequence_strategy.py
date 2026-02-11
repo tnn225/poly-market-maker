@@ -17,28 +17,6 @@ DEBUG = False
 MIN_SHARES = 10
 MAX_SHARES = MIN_SHARES * 16
 
-class OrderType:
-    def __init__(self, order: Order):
-        self.price = order.price
-        self.side = order.side
-        self.token = order.token
-
-    def __eq__(self, other):
-        if isinstance(other, OrderType):
-            return (
-                self.price == other.price
-                and self.side == other.side
-                and self.token == other.token
-            )
-        return False
-
-    def __hash__(self):
-        return hash((self.price, self.side, self.token))
-
-    def __repr__(self):
-        return f"OrderType[price={self.price}, side={self.side}, token={self.token}]"
-
-
 class SequenceStrategy(BaseStrategy):
     def __init__(self, interval: int, shares: int, is_up: bool):
         super().__init__(interval)
@@ -69,11 +47,11 @@ class SequenceStrategy(BaseStrategy):
 
         price = round(bid, 2) if self.is_up else round(1 - ask, 2)
         size = self.shares - self.balances[self.mytoken]
-        self.order = self.clob_api.get_order(self.order['id']) if self.order is not None else None
-        if 0.01 <= price <= 0.99 and size >= MIN_SIZE and (self.order is None or price > self.order['price']):
+        # self.order = self.get_order(self.order.id) if self.order is not None else None
+        if 0.01 <= price <= 0.99 and size >= MIN_SIZE and (self.order is None or price > self.order.price):
             if self.order is not None:
                 print(f"Cancelling order {self.order}")
-                self.clob_api.cancel_order(self.order['id'])
+                self.clob_api.cancel_order(self.order.id)
             self.order = self.place_order(Order(price=price, size=size, side=Side.BUY, token=self.mytoken))
             print(f"Placing order {self.order}")
 

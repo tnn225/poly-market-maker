@@ -14,8 +14,6 @@ from poly_market_maker.utils import setup_logging
 from poly_market_maker.clob_api import ClobApi
 from poly_market_maker.order import Side
 from poly_market_maker.strategies.simple_order import SimpleOrder
-from poly_market_maker.strategies.simple_strategy import SimpleStrategy
-
 
 
 from dotenv import load_dotenv          # Environment variable management
@@ -62,7 +60,6 @@ class TradeManager:
         self.price_engine = price_engine
         self.market = clob_api.get_market(interval)
 
-        self.strategy = SimpleStrategy()
         self.order_book_engine = OrderBookEngine(self.market)
         self.order_book_engine.start()
 

@@ -36,7 +36,7 @@ clob_api = ClobApi()
 price_engine = PriceEngine(symbol="btc/usd")
 
 telegram = Telegram()
-MIN_SHARES = 10
+MIN_SHARES = 20
 MAX_SHARES = MIN_SHARES * 16
 
 def get_df():
@@ -84,7 +84,11 @@ def run_sequence(interval: int, shares: int, is_up: bool):
     if not strategy.run():
         telegram.send_message(f"{url} {shares} shares {side} balances {strategy.balances[strategy.mytoken]}: too low")
         return False
-    telegram.send_message(f"{url} {shares} shares {side} balances {strategy.balances[strategy.mytoken]}: success")
+    position = strategy.clob_api.get_position(strategy.market, strategy.market.token_ids[strategy.mytoken])
+    if position is not None:
+        telegram.send_message(f"{url} {position['size']:.2f} shares {side} at {position['avg_price']:.2f} = ${position['cost']:.2f}: success")
+    else:
+        telegram.send_message(f"{url} {shares} shares {side}: success")
 
     while int(time.time()) <= interval + 840:
         time.sleep(1)

@@ -13,9 +13,9 @@ DEBUG = False
 
 
 # get_holders thresholds (relaxed when DEBUG)
-HOLDER_MIN_SIZE = 1000 if DEBUG else 10000
+HOLDER_MIN_SIZE = 1000 if DEBUG else 25000
 MIN_TOTAL_SIZE = 1000 if DEBUG else 60000
-MAX_TRADED_COUNT = 1000 if DEBUG else 30
+MAX_TRADED_COUNT = 1000 if DEBUG else 100
 
 
 def _env_address_list(key: str) -> list:

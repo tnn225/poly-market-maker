@@ -511,7 +511,7 @@ class ClobApi:
             self.logger.error(f"Error getting USDC.e balance for {address}: {e}")
             return 0.0
 
-    def get_positions(self, address: str, market: Market) -> dict:
+    def get_positions(self, market: Market, address: str = FUNDER) -> dict:
         params = {
             "sizeThreshold": 1,
             "limit": 100,
@@ -530,8 +530,8 @@ class ClobApi:
         time.sleep(0.1)
         return positions
 
-    def get_position(self, address: str, market: Market, token_id: int) -> dict:
-        positions = self.get_positions(address, market)
+    def get_position(self, market: Market, token_id: int, address: str = FUNDER) -> dict:
+        positions = self.get_positions(market, address)
         return positions.get(token_id, None)
 
     def get_balance_allowance(self, address: str, token_id: int) -> float:

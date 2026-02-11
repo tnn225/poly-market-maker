@@ -173,7 +173,7 @@ def run(interval: int):
             print_holders(interval)
         except Exception as e:
             logger.error(f"Error printing holders: {e}")
-        time.sleep(30)
+        time.sleep(10)
 
 def main():
     while True:
