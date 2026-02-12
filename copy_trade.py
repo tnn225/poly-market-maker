@@ -1,4 +1,5 @@
 import logging
+import threading
 import time
 
 from poly_market_maker.utils import setup_logging
@@ -9,13 +10,18 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 def main():
+    duration = 15
+    symbols = ["eth", "btc", "sol", "xrp"] if duration == 15 else ["btc"]
     maker = None
+    maker_thread = None
     while True:
         now = int(time.time()) + 10
         interval = now // 900 * 900
         if maker is None or interval != maker.start_time:
-            maker = CopyTradeStrategy(interval=interval)
-            maker.run()
+            for symbol in symbols:
+                maker = CopyTradeStrategy(interval=interval, symbol=symbol, duration=duration)
+                maker_thread = threading.Thread(target=maker.run, daemon=True)
+                maker_thread.start()
         time.sleep(1)
 
 if __name__ == "__main__":

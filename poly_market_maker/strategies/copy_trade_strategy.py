@@ -7,23 +7,34 @@ from poly_market_maker.strategies.base_strategy import BaseStrategy
 
 ORDER_SIZE = 100
 DEBUG = False
-ADDRESS = "0x2e33c2571dcca96cd8e558dcf8195c738b82d046"
-# ADDRESS = "0xe041d09715148a9a4a7a881a5580da2c0701f2e5"
 
-# ADDRESS = "0x506bce138df20695c03cd5a59a937499fb00b0fe"
+# Only entry if at least one of these addresses has a position
+WATCH_ADDRESSES = [
+    "0x2e33c2571dcca96cd8e558dcf8195c738b82d046",
+    "0x4460bf2c0aa59db412a6493c2c08970797b62970",
+    "0x6ce61e4481377d8ee002be65f9dad04683ac2ab9",
+]
 
 class CopyTradeStrategy(BaseStrategy):
-    def __init__(self, interval: int):
-        super().__init__(interval)
+    def __init__(self, interval: int, symbol: str, duration: int = 15):
+        super().__init__(interval, symbol, duration)
+        self.symbol = symbol
         self.buy_token_a = True
         self.buy_token_b = True
-        self.buy_prices = [0.05, 0.10, 0.15, 0.20, 0.3]
+        self.buy_prices = [0.05, 0.10, 0.15, 0.20, 0.3, 0.4, 0.5]
 
     def trade(self):
-        balances = self.clob_api.get_balances(self.market, ADDRESS)
-        if not((balances[MyToken.A] > 0 and self.buy_token_a) or (balances[MyToken.B] > 0 and self.buy_token_b)):
-            self.logger.debug(f"no trade opportunities")
+        # Entry only if any watched address has a position
+        balances = {MyToken.A: 0, MyToken.B: 0}
+        for addr in WATCH_ADDRESSES:
+            b = self.clob_api.get_balances(self.market, addr)
+            balances[MyToken.A] = max(balances[MyToken.A], b[MyToken.A])
+            balances[MyToken.B] = max(balances[MyToken.B], b[MyToken.B])
+
+        if not ((balances[MyToken.A] > 0 and self.buy_token_a) or (balances[MyToken.B] > 0 and self.buy_token_b)):
+            self.logger.debug(f"no {self.symbol} trade opportunities: {balances}")
             return
+        self.logger.info(f"Entry {self.symbol}: address {addr} has position: {balances}")
 
         bid, ask = self.order_book_engine.get_bid_ask(MyToken.A)
         self.logger.info(f"bid: {bid}, ask: {ask}")
@@ -33,14 +44,14 @@ class CopyTradeStrategy(BaseStrategy):
             return
 
         orders = []
-        if balances[MyToken.A] > 20000 and self.buy_token_a:
+        if balances[MyToken.A] > 10000 and self.buy_token_a:
             self.buy_token_a = False
-            orders.append(Order(price=float(bid), size=ORDER_SIZE, side=Side.BUY, token=MyToken.A))
+            orders.append(Order(price=float(bid), size=ORDER_SIZE*5, side=Side.BUY, token=MyToken.A))
             for buy_price in self.buy_prices:
                 orders.append(Order(price=float(min(bid, buy_price)), size=ORDER_SIZE, side=Side.BUY, token=MyToken.A))
-        if balances[MyToken.B] > 20000 and self.buy_token_b:
+        if balances[MyToken.B] > 10000 and self.buy_token_b:
             self.buy_token_b = False
-            orders.append(Order(price=float(1 - ask), size=ORDER_SIZE, side=Side.BUY, token=MyToken.B))
+            orders.append(Order(price=float(1 - ask), size=ORDER_SIZE*5, side=Side.BUY, token=MyToken.B))
             for buy_price in self.buy_prices:
                 orders.append(Order(price=float(min(1 - ask, buy_price)), size=ORDER_SIZE, side=Side.BUY, token=MyToken.B))
         if not DEBUG and len(orders) > 0:

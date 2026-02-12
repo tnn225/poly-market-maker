@@ -9,6 +9,7 @@ USER = "0x6031b6eed1c97e853c6e0f03ad3ce3529351f96d" # Gabagool22
 # USER = "0xa5e83423126dbc6cdb34f10f37f5d27668ab95f5" # haidcks116
 USER = "0x2e33c2571dcca96cd8e558dcf8195c738b82d046" # MiyooMarketMaker
 USER = "0x6ce61e4481377d8ee002be65f9dad04683ac2ab9" # tsafwan39
+USER = "0x69d2648cf20d9d57c6ba5319aa09dda43bd522fb" # unknow
 AUTH_TOKEN = "b3471958-6e00-47a1-a5b8-f3eb7e144edb"
 MAX_RETRIES = 5
 # ================================================
@@ -105,7 +106,7 @@ def save_to_csv(orders: list, filename: str):
 if __name__ == "__main__":
     now = int(time.time())
     TIMESTAMP = now - (now % 900) if False else 1770891300
-
+    TIMESTAMP = 1770907500
 
     for symbol in ["eth", "btc", "sol", "xrp"]:
         MARKET_SLUG = f"{symbol}-updown-15m-{TIMESTAMP}"
@@ -113,4 +114,4 @@ if __name__ == "__main__":
 
         print(f"\nFetching orders for user: {USER} slug: {MARKET_SLUG}")
         orders = fetch_all_orders(USER, MARKET_SLUG, AUTH_TOKEN, MAX_RETRIES)
-        save_to_csv(orders, f"./data/orders/{TIMESTAMP}_{USER}_{symbol}.csv")
+        save_to_csv(orders, f"./data/orders/{symbol}_{TIMESTAMP}_{USER}.csv")
