@@ -46,8 +46,12 @@ class SequenceStrategy(BaseStrategy):
         self.logger.info(f"price: {self.price:.2f} ({delta:+.2f}) bid: {bid:.2f} ask: {ask:.2f}")
 
         price = round(bid, 2) if self.is_up else round(1 - ask, 2)
+        self.order = self.get_order(self.order.id) if self.order is not None else None
+
         size = self.shares - self.balances[self.mytoken]
-        # self.order = self.get_order(self.order.id) if self.order is not None else None
+        if self.order is not None:
+            size = min(size, self.order.size - self.order.size_matched)
+
         if 0.01 <= price <= 0.99 and size >= MIN_SIZE and (self.order is None or price > self.order.price):
             if self.order is not None:
                 print(f"Cancelling order {self.order}")

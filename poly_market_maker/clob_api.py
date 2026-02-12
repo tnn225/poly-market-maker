@@ -156,9 +156,8 @@ class ClobApi:
     def get_order(self, order_id: str):
         try:
             order = self.client.get_order(order_id)
-            order['size_matched'] = float(order['size_matched'])
-            order['price'] = round(float(order['price']), 2)
-            return order
+            order_dict = self._get_order(order)
+            return order_dict
         except Exception as e:
             self.logger.error(f"Error fetching order {order_id}: {e}")
             return None
@@ -322,16 +321,17 @@ class ClobApi:
             return False
 
     def _get_order(self, order_dict: dict) -> dict:
-        size = float(order_dict.get("original_size")) - float(
-            order_dict.get("size_matched")
-        )
+        original_size = float(order_dict.get("original_size", 0))
+        size_matched = float(order_dict.get("size_matched", 0))
         price = float(order_dict.get("price"))
         side = order_dict.get("side")
         order_id = order_dict.get("id")
         token_id = int(order_dict.get("asset_id"))
 
         return {
-            "size": size,
+            "size": original_size - size_matched,
+            "original_size": original_size,
+            "size_matched": size_matched,
             "price": price,
             "side": side,
             "token_id": token_id,

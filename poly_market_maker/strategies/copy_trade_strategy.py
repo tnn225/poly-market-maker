@@ -7,7 +7,7 @@ from poly_market_maker.strategies.base_strategy import BaseStrategy
 
 ORDER_SIZE = 100
 DEBUG = False
-ADDRESS = "0xcc553b67cfa321f74c56515727ebe16dcb137cb3"
+ADDRESS = "0x2e33c2571dcca96cd8e558dcf8195c738b82d046"
 # ADDRESS = "0xe041d09715148a9a4a7a881a5580da2c0701f2e5"
 
 # ADDRESS = "0x506bce138df20695c03cd5a59a937499fb00b0fe"
@@ -17,7 +17,7 @@ class CopyTradeStrategy(BaseStrategy):
         super().__init__(interval)
         self.buy_token_a = True
         self.buy_token_b = True
-        self.buy_prices = [0.05, 0.10, 0.15, 0,20, 0.30]
+        self.buy_prices = [0.05, 0.10, 0.15, 0.20, 0.30, 0.40, 0.50]
 
     def trade(self):
         balances = self.clob_api.get_balances(self.market, ADDRESS)
@@ -36,11 +36,11 @@ class CopyTradeStrategy(BaseStrategy):
         if balances[MyToken.A] > 0 and self.buy_token_a:
             self.buy_token_a = False
             for buy_price in self.buy_prices:
-                orders.append(Order(price=min(bid, buy_price), size=ORDER_SIZE, side=Side.BUY, token=MyToken.A))
+                orders.append(Order(price=float(min(bid, buy_price)), size=ORDER_SIZE, side=Side.BUY, token=MyToken.A))
         if balances[MyToken.B] > 0 and self.buy_token_b:
             self.buy_token_b = False
             for buy_price in self.buy_prices:
-                orders.append(Order(price=min(1-ask,buy_price), size=ORDER_SIZE, side=Side.BUY, token=MyToken.B))
+                orders.append(Order(price=float(min(1 - ask, buy_price)), size=ORDER_SIZE, side=Side.BUY, token=MyToken.B))
         if not DEBUG and len(orders) > 0:
             self.place_orders(orders)
         self.logger.info(f"Placed orders: {orders}")

@@ -111,26 +111,6 @@ class BaseStrategy:
         self.balances = self.clob_api.get_balances(self.market)
         return self.balances
 
-    def get_orders(self) -> list[Order]:
-        if time.time() - self.last_orders_time < 3:
-            return self.orders
-        
-        self.balances = self.get_balances()
-        
-        order_dicts = self.clob_api.get_orders(self.market.condition_id)
-        self.orders = [
-            Order(
-                size=float(order_dict["size"]),
-                price=float(order_dict["price"]),
-                side=Side(order_dict["side"]),
-                token=self.market.token(order_dict["token_id"]),
-                id=order_dict["id"],
-            )
-            for order_dict in order_dicts
-        ]
-        self.order_types = set(OrderType(order) for order in self.orders)
-        self.last_orders_time = time.time()
-        return self.orders
 
 
     def place_orders(self, orders: list[Order]):
@@ -159,3 +139,42 @@ class BaseStrategy:
     def cancel_orders(self, orders: list[Order]) -> list[Order]:
         order_ids = [order.id for order in orders]
         self.clob_api.cancel_orders(order_ids)
+
+    def get_orders(self) -> list[Order]:
+        if time.time() - self.last_orders_time < 3:
+            return self.orders
+        
+        self.balances = self.get_balances()
+        
+        order_dicts = self.clob_api.get_orders(self.market.condition_id)
+        print(f"order_dicts: {order_dicts}")
+        self.orders = [
+            Order(
+                size=float(order_dict["size"]),
+                price=float(order_dict["price"]),
+                side=Side(order_dict["side"]),
+                token=self.market.token(order_dict["token_id"]),
+                size_matched=float(order_dict["size_matched"]),
+                id=order_dict["id"],
+            )
+            for order_dict in order_dicts
+        ]
+        self.last_orders_time = time.time()
+        return self.orders
+
+    def get_order(self, order_id: str):
+        order_dict = self.clob_api.get_order(order_id)
+        if order_dict is None:
+            return None
+
+        size = float(order_dict.get("original_size", order_dict.get("size", 0)))
+        token_id = int(order_dict.get("asset_id", order_dict.get("token_id", 0)))
+
+        return Order(
+                size=size,
+                price=float(order_dict["price"]),
+                side=Side(order_dict["side"]),
+                token=self.market.token(token_id),
+                size_matched=float(order_dict["size_matched"]),
+                id=order_dict["id"],
+            )

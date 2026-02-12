@@ -3,12 +3,13 @@ import csv
 import time
 
 # ============ NHẬP THÔNG TIN TẠI ĐÂY ============
-TIMESTAMP = 1768982400
+TIMESTAMP = 1770882300
 USER = "0x38973f5b3abbbcbed16ee15c2baa5a3f16b843ab" # Wacha LTF
 USER = "0x6031b6eed1c97e853c6e0f03ad3ce3529351f96d" # Gabagool22
 # USER = "0x589222a5124a96765443b97a3498d89ffd824ad2" # PurpleThunderBicycleMountain
 # USER = "0xa5e83423126dbc6cdb34f10f37f5d27668ab95f5" # haidcks116
-MARKET_SLUG = f"btc-updown-15m-{TIMESTAMP}"
+USER = "0x2e33c2571dcca96cd8e558dcf8195c738b82d046" # MiyooMarketMaker
+MARKET_SLUG = f"eth-updown-15m-{TIMESTAMP}"
 AUTH_TOKEN = "b3471958-6e00-47a1-a5b8-f3eb7e144edb"
 OUTPUT_FILE = f"./data/orders/{TIMESTAMP}_{USER}.csv"
 MAX_RETRIES = 5
@@ -75,10 +76,10 @@ def fetch_all_orders(user: str, market_slug: str, auth_token: str, max_retries: 
         order["price"] = round(order["price"], 2)
         
         # Transform: if buying Down, convert to selling Up
-        if order.get('token_label') == 'Down' and order.get('side') == 'BUY':
-            order['token_label'] = 'Up'
-            order['side'] = 'SELL'
-            order['price'] = round(1 - order['price'], 2)
+        # if order.get('token_label') == 'Down' and order.get('side') == 'BUY':
+        #    order['token_label'] = 'Up'
+        #    order['side'] = 'SELL'
+        #    order['price'] = round(1 - order['price'], 2)
 
     all_orders.sort(key=lambda x: x["timestamp"])
 

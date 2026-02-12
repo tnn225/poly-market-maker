@@ -91,7 +91,7 @@ def run_sequence(interval: int, shares: int, is_up: bool):
         telegram.send_message(f"{url} {shares} shares {side}: success")
 
     while int(time.time()) <= interval + 840:
-        time.sleep(1)
+        time.sleep(10)
         now = int(time.time())
         seconds_left = 900 - (now % 900)
         if seconds_left < 120:
