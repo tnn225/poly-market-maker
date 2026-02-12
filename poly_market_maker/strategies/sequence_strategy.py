@@ -56,6 +56,9 @@ class SequenceStrategy(BaseStrategy):
             if self.order is not None:
                 print(f"Cancelling order {self.order}")
                 self.clob_api.cancel_order(self.order.id)
+                self.order = self.get_order(self.order.id)
+                size = min(size, self.order.size - self.order.size_matched)
+
             self.order = self.place_order(Order(price=price, size=size, side=Side.BUY, token=self.mytoken))
             print(f"Placing order {self.order}")
 

@@ -3,15 +3,13 @@ import csv
 import time
 
 # ============ NHẬP THÔNG TIN TẠI ĐÂY ============
-TIMESTAMP = 1770882300
 USER = "0x38973f5b3abbbcbed16ee15c2baa5a3f16b843ab" # Wacha LTF
 USER = "0x6031b6eed1c97e853c6e0f03ad3ce3529351f96d" # Gabagool22
 # USER = "0x589222a5124a96765443b97a3498d89ffd824ad2" # PurpleThunderBicycleMountain
 # USER = "0xa5e83423126dbc6cdb34f10f37f5d27668ab95f5" # haidcks116
 USER = "0x2e33c2571dcca96cd8e558dcf8195c738b82d046" # MiyooMarketMaker
-MARKET_SLUG = f"eth-updown-15m-{TIMESTAMP}"
+USER = "0x6ce61e4481377d8ee002be65f9dad04683ac2ab9" # tsafwan39
 AUTH_TOKEN = "b3471958-6e00-47a1-a5b8-f3eb7e144edb"
-OUTPUT_FILE = f"./data/orders/{TIMESTAMP}_{USER}.csv"
 MAX_RETRIES = 5
 # ================================================
 
@@ -40,7 +38,7 @@ def fetch_all_orders(user: str, market_slug: str, auth_token: str, max_retries: 
     """Fetch all orders from the API with pagination and retry support."""
     base_url = "https://api.domeapi.io/v1/polymarket/orders"
     headers = {"Authorization": f'Bearer {auth_token}'}
-    print(headers)
+    # print(headers)
     all_orders = []
     offset = 0
     limit = 1000
@@ -89,7 +87,7 @@ def fetch_all_orders(user: str, market_slug: str, auth_token: str, max_retries: 
 def save_to_csv(orders: list, filename: str):
     """Save orders to CSV file."""
     if not orders:
-        print("No orders to save.")
+        # print("No orders to save.")
         return
 
     fieldnames = [
@@ -105,9 +103,14 @@ def save_to_csv(orders: list, filename: str):
 
 
 if __name__ == "__main__":
+    now = int(time.time())
+    TIMESTAMP = now - (now % 900) if False else 1770891300
 
-    print(f"Fetching orders for user: {USER}")
-    print(f"Market slug: {MARKET_SLUG}")
 
-    orders = fetch_all_orders(USER, MARKET_SLUG, AUTH_TOKEN, MAX_RETRIES)
-    save_to_csv(orders, OUTPUT_FILE)
+    for symbol in ["eth", "btc", "sol", "xrp"]:
+        MARKET_SLUG = f"{symbol}-updown-15m-{TIMESTAMP}"
+        OUTPUT_FILE = f"./data/orders/{TIMESTAMP}_{USER}.csv"
+
+        print(f"\nFetching orders for user: {USER} slug: {MARKET_SLUG}")
+        orders = fetch_all_orders(USER, MARKET_SLUG, AUTH_TOKEN, MAX_RETRIES)
+        save_to_csv(orders, f"./data/orders/{TIMESTAMP}_{USER}_{symbol}.csv")
