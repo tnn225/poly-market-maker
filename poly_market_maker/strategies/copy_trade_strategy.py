@@ -17,7 +17,7 @@ class CopyTradeStrategy(BaseStrategy):
         super().__init__(interval)
         self.buy_token_a = True
         self.buy_token_b = True
-        self.buy_prices = [0.05, 0.10, 0.15, 0.20, 0.3]
+        self.buy_prices = [0.05, 0.10, 0.15, 0.20, 0.3, 0.4, 0.5]
 
     def trade(self):
         balances = self.clob_api.get_balances(self.market, ADDRESS)
@@ -35,12 +35,12 @@ class CopyTradeStrategy(BaseStrategy):
         orders = []
         if balances[MyToken.A] > 20000 and self.buy_token_a:
             self.buy_token_a = False
-            orders.append(Order(price=float(bid), size=ORDER_SIZE, side=Side.BUY, token=MyToken.A))
+            orders.append(Order(price=float(bid), size=500, side=Side.BUY, token=MyToken.A))
             for buy_price in self.buy_prices:
                 orders.append(Order(price=float(min(bid, buy_price)), size=ORDER_SIZE, side=Side.BUY, token=MyToken.A))
         if balances[MyToken.B] > 20000 and self.buy_token_b:
             self.buy_token_b = False
-            orders.append(Order(price=float(1 - ask), size=ORDER_SIZE, side=Side.BUY, token=MyToken.B))
+            orders.append(Order(price=float(1 - ask), size=500, side=Side.BUY, token=MyToken.B))
             for buy_price in self.buy_prices:
                 orders.append(Order(price=float(min(1 - ask, buy_price)), size=ORDER_SIZE, side=Side.BUY, token=MyToken.B))
         if not DEBUG and len(orders) > 0:
