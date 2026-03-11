@@ -34,7 +34,7 @@ class OrderType:
 class BaseStrategy:
     """Base market making strategy"""
 
-    def __init__(self, interval: int):
+    def __init__(self, interval: int, symbol: str = "btc", duration: int = 15):
         self.logger = logging.getLogger(self.__class__.__name__)
 
         self.interval = interval
@@ -42,8 +42,8 @@ class BaseStrategy:
         self.end_time = interval + 900
 
         self.clob_api = ClobApi()
-        self.price_engine = PriceEngine(symbol="btc/usd")
-        self.market = self.clob_api.get_market(interval)
+        self.price_engine = PriceEngine(symbol=f"{symbol}/usd")
+        self.market = self.clob_api.get_market(interval, symbol, duration=duration)
 
         self.order_book_engine = OrderBookEngine(self.market)
         self.order_book_engine.start()

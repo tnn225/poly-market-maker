@@ -367,8 +367,8 @@ class ClobApi:
                 
         return resp.json().get("conditionId")
 
-    def get_market(self, timestamp: int, symbol: str='btc'):
-        slug = f"{symbol}-updown-15m-{timestamp}"
+    def get_market(self, timestamp: int, symbol: str='btc', duration: int = 15):
+        slug = f"{symbol}-updown-{duration}m-{timestamp}"
         if slug in self.markets:
             return self.markets[slug]
         print( f"Fetching market for slug: {slug}")
@@ -399,7 +399,7 @@ class ClobApi:
             MyToken.A: positions.get(market.token_ids[MyToken.A]).get('size') if positions.get(market.token_ids[MyToken.A]) else 0,
             MyToken.B: positions.get(market.token_ids[MyToken.B]).get('size') if positions.get(market.token_ids[MyToken.B]) else 0,
         }
-        self.logger.info(f"balances: {balances}")
+        # self.logger.info(f"balances: {balances}")
         return balances
 
     def _parse_positions(self, positions: list, address: str) -> list:
@@ -541,16 +541,28 @@ class ClobApi:
                 token_id=token_id,
             )
         )
-        print(f"resp: {resp}")
+        #print(f"resp: {resp}")
 
         return float(resp.get('balance', 0)) / 10**6
 
     def get_shares(self, market: Market, user: str = FUNDER) -> dict:
-        shares = {
-            MyToken.A: self.get_balance_allowance(user, market.token_ids[MyToken.A]),
-            MyToken.B: self.get_balance_allowance(user, market.token_ids[MyToken.B]),
-        }
-        return shares
+        last_exc = None
+        for attempt in range(3):
+            try:
+                shares = {
+                    MyToken.A: self.get_balance_allowance(user, market.token_ids[MyToken.A]),
+                    MyToken.B: self.get_balance_allowance(user, market.token_ids[MyToken.B]),
+                }
+                time.sleep(1)
+                return shares
+            except Exception as e:
+                last_exc = e
+                if attempt < 2:
+                    delay = (attempt + 1) * 2
+                    self.logger.warning(f"get_shares attempt {attempt + 1}/3 failed ({e}), retrying in {delay}s")
+                    time.sleep(delay)
+        self.logger.error(f"get_shares failed after 3 attempts: {last_exc}")
+        raise last_exc
 
 def test_holders():
     clob_api = ClobApi()
